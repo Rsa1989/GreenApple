@@ -1,0 +1,5 @@
+{
+  "name": "GreenApple",
+  "description": "Inventory management and smart sales calculator for imported electronics, featuring real-time exchange rate checks powered by Gemini.",
+  "requestFramePermissions": []
+}
