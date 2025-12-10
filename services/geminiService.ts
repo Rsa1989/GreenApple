@@ -1,9 +1,16 @@
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 export const fetchCurrentExchangeRate = async (): Promise<{ rate: number; source?: string } | null> => {
   try {
+    const apiKey = process.env.API_KEY;
+    
+    if (!apiKey) {
+      console.warn("API Key Gemini não encontrada.");
+      return null;
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: "Qual é a cotação exata do dólar comercial (USD) para Reais (BRL) hoje? Retorne APENAS um objeto JSON válido (sem markdown) com o campo 'rate' sendo um número (ex: 5.15).",
