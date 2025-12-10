@@ -266,6 +266,31 @@ export const Configuration: React.FC<ConfigurationProps> = ({ settings, onSave }
                     className="w-full h-40 p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-apple-500 outline-none text-sm leading-relaxed"
                     placeholder="Olá! Segue o orçamento para {produto}..."
                 />
+
+                <div className="mt-6 border-t border-gray-100 pt-4">
+                     <p className="text-sm font-medium text-gray-700 mb-3">
+                        Personalizar textos automáticos (para trocas):
+                     </p>
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         <Input 
+                            label="Rótulo 'Troca'" 
+                            value={localSettings.whatsappTradeInLabel || 'Troca'}
+                            onChange={(e) => handleTextChange('whatsappTradeInLabel', e.target.value)}
+                         />
+                         <Input 
+                            label="Rótulo 'Valor Avaliado'" 
+                            value={localSettings.whatsappTradeInValueLabel || 'Valor Avaliado'}
+                            onChange={(e) => handleTextChange('whatsappTradeInValueLabel', e.target.value)}
+                         />
+                         <div className="md:col-span-2">
+                             <Input 
+                                label="Rótulo 'Total a Pagar'" 
+                                value={localSettings.whatsappTotalLabel || 'Total a pagar'}
+                                onChange={(e) => handleTextChange('whatsappTotalLabel', e.target.value)}
+                             />
+                         </div>
+                     </div>
+                </div>
             </div>
           </div>
 

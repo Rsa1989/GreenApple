@@ -1,18 +1,18 @@
-
 import React, { useState, useEffect } from 'react';
 import { ProductItem, CalculatorMode, AppSettings, SimulationItem } from '../types';
 import { Input } from './Input';
 import { fetchCurrentExchangeRate } from '../services/geminiService';
-import { Calculator, RefreshCw, Loader2, Sparkles, AlertCircle, CreditCard, Box, Edit3, Share2, MessageCircle, CheckCircle2, Circle, User, Save, Smartphone, ChevronDown } from 'lucide-react';
+import { Calculator, Loader2, Sparkles, AlertCircle, CreditCard, Box, Edit3, MessageCircle, CheckCircle2, User, Save, Smartphone, ChevronDown, X, Repeat } from 'lucide-react';
 
 interface CalculatorProps {
   inventory: ProductItem[];
   settings: AppSettings;
   onSaveSimulation?: (simulation: SimulationItem) => void;
   initialData?: SimulationItem | null;
+  onCancelEdit?: () => void;
 }
 
-export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, settings, onSaveSimulation, initialData }) => {
+export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, settings, onSaveSimulation, initialData, onCancelEdit }) => {
   const [mode, setMode] = useState<CalculatorMode>(CalculatorMode.FROM_STOCK);
   const [selectedProductId, setSelectedProductId] = useState<string>('');
   
@@ -34,6 +34,14 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
   const [customerSurname, setCustomerSurname] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
 
+  // Trade-In State
+  const [hasTradeIn, setHasTradeIn] = useState(false);
+  const [tradeInName, setTradeInName] = useState('');
+  const [tradeInValue, setTradeInValue] = useState('');
+  const [tradeInMemory, setTradeInMemory] = useState('');
+  const [tradeInColor, setTradeInColor] = useState('');
+  const [tradeInBattery, setTradeInBattery] = useState('');
+
   const [loadingRate, setLoadingRate] = useState(false);
   const [rateSource, setRateSource] = useState<string | null>(null);
 
@@ -52,36 +60,61 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
   // Load Initial Data when provided (e.g., from History)
   useEffect(() => {
       if (initialData) {
-          setMode(CalculatorMode.SIMULATION);
+          // Check if it's from stock and the product still exists
+          let restoredMode = CalculatorMode.SIMULATION;
+          let restoredProductId = '';
+
+          if (initialData.mode && (initialData.mode === CalculatorMode.FROM_STOCK || initialData.mode === CalculatorMode.FROM_USED_STOCK)) {
+             if (initialData.productId && inventory.find(i => i.id === initialData.productId)) {
+                 restoredMode = initialData.mode;
+                 restoredProductId = initialData.productId;
+             }
+          }
+
+          setMode(restoredMode);
+          setSelectedProductId(restoredProductId);
+
           setCustomerName(initialData.customerName || '');
           setCustomerSurname(initialData.customerSurname || '');
           setCustomerPhone(initialData.customerPhone || '');
-          
-          // Pre-fill manual name with the full product name from history
-          setManualName(initialData.productName || '');
-          setManualMemory('');
-          setManualColor('');
-          
-          setSimCostUsd(initialData.costUsd.toString());
-          setSimFeeUsd(initialData.feeUsd.toString());
-          setSimRate(initialData.exchangeRate.toString()); // Effective rate
-          setSimSpread('0'); // Spread is already inside exchangeRate in history item
-          
-          // Reverse calculate Tax: Total - (Base * Rate)
-          const baseUsd = initialData.costUsd + initialData.feeUsd;
-          const calculatedTax = initialData.totalCostBrl - (baseUsd * initialData.exchangeRate);
-          setSimTax(Math.max(0, calculatedTax).toFixed(2));
 
-          // Reverse calculate Margin: ((Sell / Cost) - 1) * 100
+          if (initialData.tradeInName) {
+              setHasTradeIn(true);
+              setTradeInName(initialData.tradeInName);
+              setTradeInValue(initialData.tradeInValue?.toString() || '');
+              setTradeInMemory(initialData.tradeInMemory || '');
+              setTradeInColor(initialData.tradeInColor || '');
+              setTradeInBattery(initialData.tradeInBattery?.toString() || '');
+          } else {
+              setHasTradeIn(false);
+              setTradeInName('');
+              setTradeInValue('');
+              setTradeInMemory('');
+              setTradeInColor('');
+              setTradeInBattery('');
+          }
+          
+          if (restoredMode === CalculatorMode.SIMULATION) {
+              // Populate manual fields
+              setManualName(initialData.productNameOnly || initialData.productName || '');
+              setManualMemory(initialData.productMemory || '');
+              setManualColor(initialData.productColor || '');
+              
+              setSimCostUsd(initialData.costUsd.toString());
+              setSimFeeUsd(initialData.feeUsd.toString());
+              setSimRate(initialData.exchangeRate.toString());
+              setSimSpread(initialData.spread?.toString() || settings.defaultSpread.toString()); 
+              setSimTax(initialData.importTaxBrl?.toString() || settings.defaultImportTax.toString());
+          }
+
           if (initialData.totalCostBrl > 0) {
               const calculatedMargin = ((initialData.sellingPrice / initialData.totalCostBrl) - 1) * 100;
               setMargin(calculatedMargin.toFixed(2));
           }
           
-          // Scroll to top
           window.scrollTo({ top: 0, behavior: 'smooth' });
       }
-  }, [initialData]);
+  }, [initialData, inventory]);
 
   // Initialize all installments as selected by default when settings change
   useEffect(() => {
@@ -89,11 +122,6 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
       setSelectedInstallments(settings.installmentRules.map(r => r.installments));
     }
   }, [settings.installmentRules]);
-
-  // Reset selected product when mode changes
-  useEffect(() => {
-    setSelectedProductId('');
-  }, [mode]);
 
   const handleFetchRate = async () => {
     setLoadingRate(true);
@@ -120,7 +148,6 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
       if (item) {
         costBrl = item.totalCostBrl;
         
-        // For used items, we usually don't have USD breakdown, so we keep 0 or use stored if any
         prodUsd = item.costUsd;
         feeUsd = item.feeUsd;
         baseUsd = prodUsd + feeUsd;
@@ -147,7 +174,6 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
       costBrl = (baseUsd * effectiveRate) + t;
       importTax = t;
       
-      // Construct Product Name from Manual Fields
       const parts = [manualName, manualMemory, manualColor].filter(p => p && p.trim() !== '');
       if (parts.length > 0) {
           productName = parts.join(' ');
@@ -156,12 +182,18 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
 
     const marginPercent = parseFloat(margin) || 0;
     const sellPrice = costBrl * (1 + marginPercent / 100);
-    const profit = sellPrice - costBrl;
+    
+    // Trade In Deduction Logic
+    const tradeInVal = hasTradeIn ? (parseFloat(tradeInValue) || 0) : 0;
+    const finalPriceToPay = Math.max(0, sellPrice - tradeInVal);
 
-    return { costBrl, sellPrice, profit, baseUsd, prodUsd, feeUsd, effectiveRate, importTax, productName };
+    // Ajuste solicitado: Lucro = Total a Pagar - Custo Total
+    const profit = finalPriceToPay - costBrl;
+
+    return { costBrl, sellPrice, profit, baseUsd, prodUsd, feeUsd, effectiveRate, importTax, productName, tradeInVal, finalPriceToPay };
   };
 
-  const { costBrl, sellPrice, profit, baseUsd, prodUsd, feeUsd, effectiveRate, importTax, productName } = getCalculation();
+  const { costBrl, sellPrice, profit, baseUsd, prodUsd, feeUsd, effectiveRate, importTax, productName, tradeInVal, finalPriceToPay } = getCalculation();
 
   const toggleInstallment = (installments: number) => {
     setSelectedInstallments(prev => 
@@ -182,22 +214,55 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
   const handleWhatsAppShare = () => {
     const formatCurrency = (val: number) => `R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     
-    // Generate Installment List String based on SELECTION
+    // Installments calculated on FINAL price (after trade-in)
     const installmentLines = settings.installmentRules
         .filter(rule => selectedInstallments.includes(rule.installments))
         .map(rule => {
-            const totalWithInterest = sellPrice * (1 + (rule.rate / 100));
+            const totalWithInterest = finalPriceToPay * (1 + (rule.rate / 100));
             const installmentValue = totalWithInterest / rule.installments;
             return `${rule.installments}x de ${formatCurrency(installmentValue)}`;
         }).join('\n');
+    
+    // Trade-In details for message
+    let tradeInDetails = "";
+    
+    // Use user-defined labels or fallbacks
+    const labelTradeIn = settings.whatsappTradeInLabel || "Troca";
+    const labelValue = settings.whatsappTradeInValueLabel || "Valor Avaliado";
+    const labelTotal = settings.whatsappTotalLabel || "Total a pagar";
+
+    if (hasTradeIn && tradeInVal > 0) {
+        // Build the string carefully to avoid empty parenthesis
+        const specs = [tradeInMemory, tradeInColor].filter(s => s && s.trim() !== '').join(' ');
+        const details = specs ? ` (${specs})` : '';
+        
+        tradeInDetails = `\n🔄 *${labelTradeIn}:* ${tradeInName}${details}\n📉 *${labelValue}:* - ${formatCurrency(tradeInVal)}`;
+    }
 
     let message = settings.whatsappTemplate || "";
-    
-    // Replace Variables
-    // Logic: If in Manual mode and we have initialData but no manual typing yet, use initial data name. 
-    // Otherwise rely on calculated productName
     message = message.replace(/{produto}/g, productName);
-    message = message.replace(/{preco}/g, formatCurrency(sellPrice));
+    
+    // Logic: If trade-in, show breakdown. If not, show normal price.
+    // The asterisk bolding is added dynamically here based on whether we are expanding the block or not.
+    // If user's template has *{preco}*, we need to be careful. The App.tsx defaults no longer have asterisks around {preco}.
+    
+    // We assume the user's template uses {preco} without asterisks, so we add them here.
+    // If the user added asterisks in the template around {preco}, we might get double asterisks, but we tried to clean that up in App.tsx defaults.
+    // To be safe, we'll assume {preco} is just a placeholder and we provide the bolded values.
+    
+    // Check if the placeholder is wrapped in asterisks in the template
+    const isWrappedInAsterisks = /\*{preco}\*/.test(message);
+    const placeholder = isWrappedInAsterisks ? "*{preco}*" : "{preco}";
+
+    if (hasTradeIn && tradeInVal > 0) {
+         // Show Base Price, Trade In Info, and Final Price
+         // Note: We don't want double asterisks if the user wrapped {preco} in asterisks.
+         const priceBlock = `*${formatCurrency(sellPrice)}*${tradeInDetails}\n\n💰 *${labelTotal}: ${formatCurrency(finalPriceToPay)}*`;
+         message = message.replace(placeholder, priceBlock);
+    } else {
+         message = message.replace(placeholder, `*${formatCurrency(sellPrice)}*`);
+    }
+    
     message = message.replace(/{parcelas}/g, installmentLines || "(Consulte condições)");
 
     const encodedMessage = encodeURIComponent(message);
@@ -205,7 +270,6 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
   };
 
   const handleSaveClick = () => {
-      // Validate customer name regardless of mode
       if (!customerName) {
           alert("Por favor, preencha o nome do cliente.");
           return;
@@ -213,23 +277,39 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
 
       if (onSaveSimulation) {
           const simItem: SimulationItem = {
-              id: '', // Will be generated by Firestore
+              id: initialData?.id || '', // Preserve ID if editing
               customerName: customerName || "Cliente",
               customerSurname: customerSurname || "",
               customerPhone: customerPhone || "",
               productName: productName,
+              // Save granular details for manual mode
+              productNameOnly: mode === CalculatorMode.SIMULATION ? manualName : undefined,
+              productMemory: mode === CalculatorMode.SIMULATION ? manualMemory : undefined,
+              productColor: mode === CalculatorMode.SIMULATION ? manualColor : undefined,
+
               costUsd: prodUsd,
               feeUsd: feeUsd,
               exchangeRate: effectiveRate,
+              // NEW: Save spread and import tax so they can be carried over to Orders
+              spread: mode === CalculatorMode.SIMULATION ? (parseFloat(simSpread) || 0) : undefined,
+              importTaxBrl: mode === CalculatorMode.SIMULATION ? (parseFloat(simTax) || 0) : importTax,
+
               totalCostBrl: costBrl,
-              sellingPrice: sellPrice,
-              createdAt: Date.now()
+              sellingPrice: sellPrice, // We save the FULL selling price for profit calc
+              createdAt: Date.now(),
+              mode: mode,
+              productId: selectedProductId,
+              // Add Trade In Info if enabled
+              tradeInName: hasTradeIn ? tradeInName : undefined,
+              tradeInValue: hasTradeIn ? tradeInVal : undefined,
+              tradeInMemory: hasTradeIn ? tradeInMemory : undefined,
+              tradeInColor: hasTradeIn ? tradeInColor : undefined,
+              tradeInBattery: hasTradeIn ? (parseFloat(tradeInBattery) || undefined) : undefined,
           };
           onSaveSimulation(simItem);
       }
   };
 
-  // Filter products based on selected mode
   const filteredInventory = inventory.filter(item => {
     if (mode === CalculatorMode.FROM_USED_STOCK) {
         return item.isUsed === true;
@@ -243,10 +323,13 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
   return (
     <div className="flex flex-col gap-6 animate-fade-in pb-20">
       
-      {/* iOS Style Segmented Control */}
       <div className="bg-gray-200 p-1 rounded-xl flex shadow-inner overflow-x-auto no-scrollbar">
         <button
-          onClick={() => setMode(CalculatorMode.FROM_STOCK)}
+          onClick={() => {
+              setMode(CalculatorMode.FROM_STOCK);
+              setSelectedProductId('');
+              setHasTradeIn(false); // Reset trade in on mode change
+          }}
           className={`flex-1 flex items-center justify-center gap-1 py-2.5 px-2 rounded-lg text-[11px] sm:text-sm font-semibold transition-all whitespace-nowrap ${
             mode === CalculatorMode.FROM_STOCK ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
           }`}
@@ -255,7 +338,11 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
           Novos
         </button>
         <button
-          onClick={() => setMode(CalculatorMode.FROM_USED_STOCK)}
+          onClick={() => {
+              setMode(CalculatorMode.FROM_USED_STOCK);
+              setSelectedProductId('');
+              setHasTradeIn(false);
+          }}
           className={`flex-1 flex items-center justify-center gap-1 py-2.5 px-2 rounded-lg text-[11px] sm:text-sm font-semibold transition-all whitespace-nowrap ${
             mode === CalculatorMode.FROM_USED_STOCK ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
           }`}
@@ -264,7 +351,11 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
           Usados
         </button>
         <button
-          onClick={() => setMode(CalculatorMode.SIMULATION)}
+          onClick={() => {
+              setMode(CalculatorMode.SIMULATION);
+              setSelectedProductId('');
+              setHasTradeIn(false);
+          }}
           className={`flex-1 flex items-center justify-center gap-1 py-2.5 px-2 rounded-lg text-[11px] sm:text-sm font-semibold transition-all whitespace-nowrap ${
             mode === CalculatorMode.SIMULATION ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
           }`}
@@ -274,16 +365,22 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
         </button>
       </div>
       
-      {initialData && mode === CalculatorMode.SIMULATION && (
-         <div className="bg-blue-50 text-blue-800 p-3 rounded-xl border border-blue-100 flex items-center gap-2 text-sm">
-             <Edit3 className="w-4 h-4" />
-             Editando orçamento de: <strong>{initialData.productName}</strong>
+      {initialData && (
+         <div className="bg-blue-50 text-blue-800 p-3 rounded-xl border border-blue-100 flex items-center justify-between text-sm">
+             <div className="flex items-center gap-2">
+                 <Edit3 className="w-4 h-4" />
+                 <span>Editando orçamento de: <strong>{initialData.productName}</strong></span>
+             </div>
+             {onCancelEdit && (
+                 <button onClick={onCancelEdit} className="p-1 hover:bg-blue-100 rounded-lg">
+                     <X className="w-4 h-4" />
+                 </button>
+             )}
          </div>
       )}
 
       <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-5">
             
-            {/* Customer Data Section - Always Visible */}
             <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 space-y-3">
                <div className="flex items-center gap-2 text-gray-800 font-medium pb-2 border-b border-gray-200">
                    <User className="w-4 h-4" />
@@ -346,7 +443,6 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
             ) : (
               <div className="space-y-4 pt-2 border-t border-gray-100 animate-fade-in">
                 
-                {/* Manual Product Details */}
                 <div className="space-y-3">
                     <Input 
                         label="Nome do Produto" 
@@ -408,6 +504,71 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
               </div>
             )}
 
+            {/* Trade-In Section (Only for Stock New and Manual) */}
+            {(mode === CalculatorMode.FROM_STOCK || mode === CalculatorMode.SIMULATION) && (
+                <div className="pt-4 border-t border-gray-100">
+                    <div className="flex items-center gap-2 mb-3">
+                         <div className="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                            <input 
+                                type="checkbox" 
+                                name="toggle" 
+                                id="trade-in-toggle" 
+                                checked={hasTradeIn}
+                                onChange={(e) => setHasTradeIn(e.target.checked)}
+                                className="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer border-gray-300 checked:right-0 checked:border-apple-500"
+                                style={{ right: hasTradeIn ? '0' : 'auto', left: hasTradeIn ? 'auto' : '0' }}
+                            />
+                            <label htmlFor="trade-in-toggle" className={`toggle-label block overflow-hidden h-5 rounded-full cursor-pointer ${hasTradeIn ? 'bg-apple-500' : 'bg-gray-300'}`}></label>
+                        </div>
+                        <label htmlFor="trade-in-toggle" className="text-sm font-medium text-gray-700 flex items-center gap-1.5 cursor-pointer">
+                            <Repeat className="w-4 h-4 text-apple-600" />
+                            Aceitar usado na troca?
+                        </label>
+                    </div>
+
+                    {hasTradeIn && (
+                        <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-3 animate-fade-in">
+                            <Input 
+                                label="Modelo do Aparelho" 
+                                placeholder="Ex: iPhone 11"
+                                value={tradeInName}
+                                onChange={(e) => setTradeInName(e.target.value)}
+                            />
+                            <div className="grid grid-cols-2 gap-3">
+                                <Input 
+                                    label="Memória" 
+                                    placeholder="Ex: 64GB"
+                                    value={tradeInMemory}
+                                    onChange={(e) => setTradeInMemory(e.target.value)}
+                                />
+                                <Input 
+                                    label="Cor" 
+                                    placeholder="Ex: Preto"
+                                    value={tradeInColor}
+                                    onChange={(e) => setTradeInColor(e.target.value)}
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <Input 
+                                    label="Saúde Bateria (%)" 
+                                    placeholder="Ex: 85"
+                                    type="number"
+                                    value={tradeInBattery}
+                                    onChange={(e) => setTradeInBattery(e.target.value)}
+                                />
+                                <Input 
+                                    label="Valor de Avaliação (R$)" 
+                                    type="number"
+                                    placeholder="0.00"
+                                    value={tradeInValue}
+                                    onChange={(e) => setTradeInValue(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
             <div className="pt-4 border-t border-gray-100">
               <Input 
                   label="Margem de Lucro" 
@@ -421,7 +582,6 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
             </div>
       </div>
 
-      {/* Main Result Card */}
       <div className="bg-gray-900 text-white p-6 rounded-3xl shadow-xl space-y-6">
           <div>
               <div className="flex items-center gap-2 mb-4 opacity-70">
@@ -434,9 +594,26 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
                   <span className="text-5xl font-bold tracking-tighter">R$ {sellPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
               
+              {hasTradeIn && tradeInVal > 0 && (
+                <div className="bg-white/10 p-3 rounded-xl border border-white/10 mt-2 space-y-1">
+                    <div className="flex justify-between text-xs text-red-300">
+                        <span>(-) {settings.whatsappTradeInLabel || 'Troca'}: {tradeInName}</span>
+                        <span>- R$ {tradeInVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-lg text-white border-t border-white/20 pt-1 mt-1">
+                        <span>{settings.whatsappTotalLabel || 'Total a pagar'}:</span>
+                        <span>R$ {finalPriceToPay.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                </div>
+              )}
+
               <div className="flex justify-center mt-2">
-                   <span className="inline-flex items-center bg-green-500/20 text-green-300 px-3 py-1 rounded-full text-sm font-bold border border-green-500/30">
-                      Lucro: + R$ {profit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                   <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold border ${
+                       profit >= 0 
+                       ? 'bg-green-500/20 text-green-300 border-green-500/30' 
+                       : 'bg-red-500/20 text-red-300 border-red-500/30'
+                   }`}>
+                      Lucro: {profit >= 0 ? '+' : ''} R$ {profit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                    </span>
               </div>
           </div>
@@ -460,7 +637,6 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
                 </div>
               )}
               
-              {/* Show constructed product name in result for verification */}
               <div className="flex justify-between text-xs text-gray-500 border-t border-gray-800 pt-2 mt-2">
                  <span>Item:</span>
                  <span className="text-gray-300 max-w-[200px] truncate text-right">{productName}</span>
@@ -474,7 +650,7 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
                     className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-lg active:scale-[0.98] transition-all"
                 >
                     <Save className="w-5 h-5" />
-                    Salvar
+                    {initialData ? "Atualizar" : "Salvar"}
                 </button>
               )}
               
@@ -490,7 +666,6 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
           </div>
       </div>
 
-      {/* Installment Table Section */}
       {sellPrice > 0 && (
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 mb-8">
             <div className="flex items-center justify-between mb-4">
@@ -507,12 +682,12 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
             </div>
             
             <p className="text-xs text-gray-400 mb-4 bg-gray-50 p-2 rounded-lg">
-                Selecione as opções abaixo para incluir na mensagem do WhatsApp.
+                Calculado sobre o valor a pagar (R$ {finalPriceToPay.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}).
             </p>
 
             <div className="divide-y divide-gray-100">
               {settings.installmentRules.map((rule) => {
-                const totalWithInterest = sellPrice * (1 + (rule.rate / 100));
+                const totalWithInterest = finalPriceToPay * (1 + (rule.rate / 100));
                 const installmentValue = totalWithInterest / rule.installments;
                 const isSelected = selectedInstallments.includes(rule.installments);
 

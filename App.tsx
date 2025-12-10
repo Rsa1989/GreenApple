@@ -1,22 +1,26 @@
-
 import React, { useState, useEffect } from 'react';
 import { Inventory } from './components/Inventory';
 import { CalculatorComponent } from './components/Calculator';
 import { Configuration } from './components/Configuration';
 import { SimulationHistory } from './components/SimulationHistory';
+import { Reports } from './components/Reports';
 import { Login } from './components/Login';
-import { ProductItem, AppSettings, SimulationItem } from './types';
-import { LayoutList, Calculator as CalcIcon, Settings, Package2, WifiOff, AlertTriangle, ExternalLink, History } from 'lucide-react';
+import { ProductItem, AppSettings, SimulationItem, Transaction } from './types';
+import { LayoutList, Calculator as CalcIcon, Settings, Package2, WifiOff, AlertTriangle, ExternalLink, History, TrendingUp } from 'lucide-react';
 import { 
   subscribeToInventory, 
   addInventoryItem, 
-  updateInventoryItem,
+  updateInventoryItem, 
   deleteInventoryItem, 
   subscribeToSettings, 
   saveSettings,
   addSimulation,
+  updateSimulation,
   subscribeToSimulations,
-  deleteSimulation
+  deleteSimulation,
+  registerSale,
+  subscribeToTransactions,
+  clearTransactions
 } from './services/firestoreService';
 
 // Helper to convert Hex to RGB array
@@ -35,39 +39,58 @@ const mix = (color: [number, number, number], mixColor: [number, number, number]
   ];
 };
 
+const generateInstallmentRules = () => {
+  const rules = Array.from({ length: 12 }, (_, i) => ({
+    installments: i + 1,
+    rate: i === 0 ? 0 : (i * 1.5)
+  }));
+  // Add 18x option
+  rules.push({
+    installments: 18,
+    rate: 27 // Default logic: 1.5 * 18, user can change later
+  });
+  return rules;
+};
+
 const DEFAULT_SETTINGS: AppSettings = {
   defaultFeeUsd: 0,
   defaultSpread: 0.10,
   defaultImportTax: 0,
-  installmentRules: Array.from({ length: 12 }, (_, i) => ({
-    installments: i + 1,
-    rate: i === 0 ? 0 : (i * 1.5)
-  })),
+  installmentRules: generateInstallmentRules(),
   themeColor: '#38a878',
   headerBackgroundColor: '#ffffff',
   backgroundColor: '#f9fafb',
   logoUrl: null,
-  whatsappTemplate: `Olá! Segue o orçamento:
+  whatsappTemplate: `Olá, segue o orçamento conforme solicitado:
 
 📱 *{produto}*
-💵 À vista: *{preco}*
+💵 À vista: {preco}
 
 💳 Parcelamento:
 {parcelas}
 
-Entre em contato para fechar!`,
+Para outras parcelas, peço que entre em contato diretamente por esse número.
+
+Obrigado por escolher a GreenApple!!`,
+  whatsappTradeInLabel: "Troca",
+  whatsappTradeInValueLabel: "Valor Avaliado",
+  whatsappTotalLabel: "Total a pagar",
   adminPassword: '1234'
 };
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeTab, setActiveTab] = useState<'inventory' | 'calculator' | 'history' | 'settings'>('inventory');
+  const [activeTab, setActiveTab] = useState<'inventory' | 'calculator' | 'history' | 'reports' | 'settings'>('inventory');
   const [items, setItems] = useState<ProductItem[]>([]);
   const [simulations, setSimulations] = useState<SimulationItem[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   
   // State for editing simulation
   const [simulationToEdit, setSimulationToEdit] = useState<SimulationItem | null>(null);
+
+  // State for converting simulation to order (Inventory)
+  const [simulationToOrder, setSimulationToOrder] = useState<SimulationItem | null>(null);
   
   // Database Error States
   const [dbError, setDbError] = useState<string | null>(null);
@@ -124,7 +147,23 @@ const App: React.FC = () => {
     
     unsubscribe = subscribeToSettings(
       (data) => {
-        setSettings(prev => ({ ...DEFAULT_SETTINGS, ...data }));
+        // Handle migration for existing users: Ensure 18x rule exists if missing
+        const mergedSettings = { ...DEFAULT_SETTINGS, ...data };
+        
+        const has18x = mergedSettings.installmentRules.some(r => r.installments === 18);
+        if (!has18x) {
+            mergedSettings.installmentRules = [
+                ...mergedSettings.installmentRules,
+                { installments: 18, rate: 27 } // 27% default for 18x
+            ].sort((a, b) => a.installments - b.installments);
+        }
+
+        // Handle migration for new labels
+        if (!mergedSettings.whatsappTradeInLabel) mergedSettings.whatsappTradeInLabel = "Troca";
+        if (!mergedSettings.whatsappTradeInValueLabel) mergedSettings.whatsappTradeInValueLabel = "Valor Avaliado";
+        if (!mergedSettings.whatsappTotalLabel) mergedSettings.whatsappTotalLabel = "Total a pagar";
+
+        setSettings(mergedSettings);
       },
       (error) => {
           console.warn("Settings sync warning:", error.message);
@@ -156,6 +195,27 @@ const App: React.FC = () => {
     };
   }, [isAuthenticated]);
 
+  // 4. Subscribe to Transactions Data
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let unsubscribe: () => void;
+    
+    unsubscribe = subscribeToTransactions(
+      (data) => {
+        setTransactions(data);
+      },
+      (error) => {
+        console.error("Transaction Subscription Error:", error);
+      }
+    );
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [isAuthenticated]);
+
+
   // Update Theme CSS Variables
   useEffect(() => {
     const baseColor = hexToRgb(settings.themeColor);
@@ -186,9 +246,9 @@ const App: React.FC = () => {
 
   }, [settings.themeColor, settings.backgroundColor]);
 
-  const handleAddItem = async (item: ProductItem) => {
+  const handleAddItem = async (item: ProductItem, customDescription?: string) => {
     try {
-        await addInventoryItem(item);
+        await addInventoryItem(item, customDescription);
     } catch (error: any) {
         alert("Erro ao salvar: " + error.message);
     }
@@ -221,9 +281,17 @@ const App: React.FC = () => {
 
   const handleSaveSimulation = async (simulation: SimulationItem) => {
     try {
-        await addSimulation(simulation);
+        if (simulation.id && simulation.id !== '') {
+            // Update existing
+             await updateSimulation(simulation);
+        } else {
+            // Create new
+            await addSimulation(simulation);
+        }
         // Switch to history tab to show success/result
         setActiveTab('history');
+        // Clear edit state
+        setSimulationToEdit(null);
     } catch (error: any) {
         alert("Erro ao salvar simulação: " + error.message);
     }
@@ -236,10 +304,47 @@ const App: React.FC = () => {
           alert("Erro ao apagar simulação: " + error.message);
       }
   };
+
+  const handleSellSimulation = async (simulation: SimulationItem) => {
+      try {
+          await registerSale(simulation);
+      } catch (error: any) {
+          alert("Erro ao registrar venda: " + error.message);
+      }
+  };
+
+  const handleClearReports = async () => {
+      try {
+          await clearTransactions();
+      } catch (error: any) {
+          alert("Erro ao limpar relatórios: " + error.message);
+      }
+  };
   
   const handleEditSimulation = (simulation: SimulationItem) => {
       setSimulationToEdit(simulation);
       setActiveTab('calculator');
+  };
+
+  const handleCancelEdit = () => {
+    setSimulationToEdit(null);
+  };
+
+  const handleOrderProduct = async (simulation: SimulationItem) => {
+    if (simulation.id) {
+        try {
+            // Mark as ordered in DB to prevent duplicates
+            await updateSimulation({ ...simulation, status: 'ordered' });
+        } catch (error) {
+            console.error("Failed to update status to ordered", error);
+        }
+    }
+    setSimulationToOrder(simulation);
+    setActiveTab('inventory');
+  };
+
+  const handleClearOrderData = () => {
+    setSimulationToOrder(null);
   };
 
   // --- RENDER LOGIC ---
@@ -319,7 +424,7 @@ const App: React.FC = () => {
                      <div className="bg-apple-500 rounded-xl p-2.5 text-white shadow-md shadow-apple-200">
                         <Package2 className="w-8 h-8" />
                      </div>
-                     <h1 className="text-2xl font-bold text-gray-900 tracking-tight">GreenApple</h1>
+                     <h1 className="text-2xl font-bold text-apple-700 tracking-tight">GreenApple</h1>
                   </div>
                )}
             </div>
@@ -334,7 +439,9 @@ const App: React.FC = () => {
             settings={settings}
             onAddItem={handleAddItem} 
             onUpdateItem={handleUpdateItem}
-            onDeleteItem={handleDeleteItem} 
+            onDeleteItem={handleDeleteItem}
+            initialOrderData={simulationToOrder}
+            onClearOrderData={handleClearOrderData}
           />
         )}
         
@@ -344,14 +451,25 @@ const App: React.FC = () => {
             settings={settings}
             onSaveSimulation={handleSaveSimulation}
             initialData={simulationToEdit}
+            onCancelEdit={handleCancelEdit}
           />
         )}
 
         {activeTab === 'history' && (
           <SimulationHistory 
             simulations={simulations}
+            inventory={items}
             onDelete={handleDeleteSimulation}
             onSelect={handleEditSimulation}
+            onSell={handleSellSimulation}
+            onOrder={handleOrderProduct}
+          />
+        )}
+
+        {activeTab === 'reports' && (
+          <Reports 
+            transactions={transactions}
+            onClear={handleClearReports}
           />
         )}
 
@@ -383,7 +501,7 @@ const App: React.FC = () => {
               }`}
             >
               <CalcIcon className={`w-6 h-6 ${activeTab === 'calculator' ? 'fill-current' : ''}`} strokeWidth={activeTab === 'calculator' ? 2 : 1.5} />
-              <span className="text-[10px] font-medium">Calculadora</span>
+              <span className="text-[10px] font-medium">Simular</span>
             </button>
 
             <button
@@ -394,6 +512,16 @@ const App: React.FC = () => {
             >
               <History className={`w-6 h-6 ${activeTab === 'history' ? 'fill-current' : ''}`} strokeWidth={activeTab === 'history' ? 2 : 1.5} />
               <span className="text-[10px] font-medium">Histórico</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('reports')}
+              className={`flex-1 flex flex-col items-center justify-center gap-1 h-full transition-all ${
+                activeTab === 'reports' ? 'text-apple-600' : 'text-gray-400'
+              }`}
+            >
+              <TrendingUp className={`w-6 h-6 ${activeTab === 'reports' ? 'fill-current' : ''}`} strokeWidth={activeTab === 'reports' ? 2 : 1.5} />
+              <span className="text-[10px] font-medium">Relatórios</span>
             </button>
 
             <button

@@ -41,7 +41,7 @@ export const Login: React.FC<LoginProps> = ({ settings, onLogin }) => {
                     <Package2 className="w-10 h-10" />
                 </div>
             )}
-            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Bem-vindo</h1>
+            <h1 className="text-2xl font-bold text-apple-700 tracking-tight">Bem-vindo</h1>
         </div>
 
         <div className="p-8">

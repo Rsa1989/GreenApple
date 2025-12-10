@@ -1,18 +1,27 @@
 
 import React, { useState } from 'react';
-import { SimulationItem } from '../types';
-import { Clock, User, Phone, Trash2, Calendar, Search, FileText, DollarSign, Loader2, ExternalLink } from 'lucide-react';
+import { SimulationItem, ProductItem } from '../types';
+import { Clock, User, Trash2, Calendar, Search, FileText, DollarSign, Loader2, ExternalLink, CheckCircle2, AlertCircle, Copy, History, ShoppingBag, Repeat } from 'lucide-react';
 
 interface SimulationHistoryProps {
   simulations: SimulationItem[];
+  inventory: ProductItem[];
   onDelete: (id: string) => Promise<void> | void;
   onSelect?: (simulation: SimulationItem) => void;
+  onSell?: (simulation: SimulationItem) => Promise<void> | void;
+  onOrder?: (simulation: SimulationItem) => void;
 }
 
-export const SimulationHistory: React.FC<SimulationHistoryProps> = ({ simulations, onDelete, onSelect }) => {
+const EXPIRATION_DAYS = 7;
+const EXPIRATION_MS = EXPIRATION_DAYS * 24 * 60 * 60 * 1000;
+
+export const SimulationHistory: React.FC<SimulationHistoryProps> = ({ simulations, inventory, onDelete, onSelect, onSell, onOrder }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [sellingId, setSellingId] = useState<string | null>(null);
+  const [orderingId, setOrderingId] = useState<string | null>(null); // State to show loading when clicking Order
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const [confirmingSellId, setConfirmingSellId] = useState<string | null>(null);
 
   const filteredSimulations = simulations.filter(sim => 
     sim.customerName.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -30,41 +39,101 @@ export const SimulationHistory: React.FC<SimulationHistoryProps> = ({ simulation
     });
   };
 
+  const formatCurrency = (val: number) => {
+    return val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  // --- DELETE LOGIC ---
   const handleClickDelete = (e: React.MouseEvent, id: string) => {
       e.stopPropagation();
       e.preventDefault();
 
-      if (confirmingId === id) {
-          // User confirmed, proceed to delete
+      if (confirmingDeleteId === id) {
           handleExecuteDelete(id);
       } else {
-          // First click, show confirmation state
-          setConfirmingId(id);
-          // Auto-reset confirmation after 3 seconds
-          setTimeout(() => {
-              setConfirmingId(prev => prev === id ? null : prev);
-          }, 3000);
+          setConfirmingDeleteId(id);
+          setConfirmingSellId(null);
+          setTimeout(() => setConfirmingDeleteId(prev => prev === id ? null : prev), 3000);
       }
   };
 
   const handleExecuteDelete = async (id: string) => {
       setDeletingId(id);
-      setConfirmingId(null);
+      setConfirmingDeleteId(null);
       try {
         await onDelete(id);
       } catch (error) {
-        console.error("Error deleting", error);
         alert("Erro ao excluir item.");
       } finally {
         setDeletingId(null);
       }
   };
 
+  // --- SELL LOGIC ---
+  const handleClickSell = (e: React.MouseEvent, id: string, sim: SimulationItem) => {
+      e.stopPropagation();
+      e.preventDefault();
+
+      if (sim.status === 'sold') return;
+
+      if (confirmingSellId === id) {
+          handleExecuteSell(sim);
+      } else {
+          setConfirmingSellId(id);
+          setConfirmingDeleteId(null);
+          setTimeout(() => setConfirmingSellId(prev => prev === id ? null : prev), 3000);
+      }
+  };
+
+  const handleExecuteSell = async (sim: SimulationItem) => {
+      if (!onSell || !sim.id) return;
+      setSellingId(sim.id);
+      setConfirmingSellId(null);
+      try {
+          await onSell(sim);
+      } catch (error: any) {
+          alert("Erro ao registrar venda: " + error.message);
+      } finally {
+          setSellingId(null);
+      }
+  }
+
+  // --- ORDER LOGIC ---
+  const handleClickOrder = (e: React.MouseEvent, sim: SimulationItem) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (onOrder) {
+        setOrderingId(sim.id);
+        onOrder(sim);
+        // We don't clear setOrderingId immediately because the parent component will likely 
+        // update the status or switch tabs, causing unmount or re-render
+    }
+  };
+
+  // --- OPEN/EDIT LOGIC ---
+  const handleOpen = (sim: SimulationItem, isExpired: boolean) => {
+      if (!onSelect) return;
+
+      if (isExpired) {
+          // If expired, we clone the data but strip the ID and timestamps
+          const { id, createdAt, soldAt, status, ...rest } = sim;
+          onSelect({
+              ...rest,
+              id: '', // Empty ID = New Entry
+              createdAt: Date.now(),
+              status: undefined
+          } as SimulationItem);
+      } else {
+          // Valid simulation: Open for editing (keeps ID)
+          onSelect(sim);
+      }
+  };
+
   return (
     <div className="space-y-6 pb-20 animate-fade-in">
       <div className="flex items-center gap-2 mb-4">
-          <Clock className="w-6 h-6 text-gray-700" />
-          <h2 className="text-xl font-bold text-gray-900">Histórico de Simulações</h2>
+          <Clock className="w-6 h-6 text-apple-700" />
+          <h2 className="text-xl font-bold text-apple-700">Histórico de Simulações</h2>
       </div>
 
       {/* Search Bar */}
@@ -81,7 +150,7 @@ export const SimulationHistory: React.FC<SimulationHistoryProps> = ({ simulation
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         {filteredSimulations.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-gray-400">
                 <FileText className="w-12 h-12 mb-3 opacity-20" />
@@ -89,92 +158,192 @@ export const SimulationHistory: React.FC<SimulationHistoryProps> = ({ simulation
             </div>
         ) : (
             filteredSimulations.map(sim => {
-                const isConfirming = confirmingId === sim.id;
+                const isConfirmingDelete = confirmingDeleteId === sim.id;
                 const isDeleting = deletingId === sim.id;
+                
+                const isConfirmingSell = confirmingSellId === sim.id;
+                const isSelling = sellingId === sim.id;
+                const isSold = sim.status === 'sold';
+                const isOrdered = sim.status === 'ordered';
+
+                // Check expiration
+                const timeDiff = Date.now() - sim.createdAt;
+                const isExpired = timeDiff > EXPIRATION_MS;
+
+                // Logic to check if item is out of stock (if it came from stock)
+                const productExists = inventory.some(i => i.id === sim.productId);
+                const isOutOfStock = !isSold && sim.productId && !productExists && (sim.mode === 'FROM_STOCK' || sim.mode === 'FROM_USED_STOCK');
+                
+                // Show order button if it was a manual simulation (or item is gone) and not sold yet
+                // AND not ordered yet
+                const showOrderButton = !isSold && !isOrdered && !isExpired && (sim.mode === 'SIMULATION' || isOutOfStock);
+                
+                const isOrdering = orderingId === sim.id;
 
                 return (
                     <div 
                         key={sim.id} 
-                        className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-3 transition-all hover:shadow-md relative z-10"
+                        className={`bg-white p-3 sm:p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-2 relative transition-all hover:shadow-md ${isSold ? 'bg-green-50/20' : isExpired ? 'bg-gray-50 opacity-90' : ''}`}
                     >
-                        
-                        {/* Header Row: User Info + Delete Button */}
-                        <div className="flex justify-between items-start border-b border-gray-50 pb-3 mb-1">
-                            <div className="flex items-start gap-3 flex-1 min-w-0 pr-2">
-                                <div className="bg-blue-50 p-2 rounded-full mt-1 flex-shrink-0">
-                                    <User className="w-5 h-5 text-blue-600" />
+                        {/* Compact Row: Name | Price */}
+                        <div className="flex justify-between items-start">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${isSold ? 'bg-green-100 text-green-600' : isExpired ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-600'}`}>
+                                    <User className="w-4 h-4" />
                                 </div>
                                 <div className="min-w-0">
-                                    <h3 className="font-bold text-gray-900 text-base leading-tight truncate">
+                                    <h3 className="font-bold text-gray-900 text-sm leading-tight truncate">
                                         {sim.customerName} {sim.customerSurname}
                                     </h3>
-                                    {sim.customerPhone && (
-                                        <div className="flex items-center gap-1.5 text-gray-500 text-sm mt-1">
-                                            <Phone className="w-3.5 h-3.5 flex-shrink-0" />
-                                            <span className="truncate">{sim.customerPhone}</span>
+                                    <div className="text-[10px] text-gray-500 font-medium truncate">
+                                        {sim.productName}
+                                    </div>
+                                    {/* Trade-In Info Badge */}
+                                    {sim.tradeInName && (
+                                        <div className="text-[10px] text-purple-600 font-semibold flex flex-col mt-0.5 leading-tight">
+                                            <div className="flex items-center gap-1">
+                                                <Repeat className="w-3 h-3" />
+                                                Troca: {sim.tradeInName}
+                                            </div>
+                                            {(sim.tradeInMemory || sim.tradeInColor) && (
+                                                <span className="text-gray-400 pl-4">
+                                                    {sim.tradeInMemory} {sim.tradeInColor}
+                                                </span>
+                                            )}
                                         </div>
                                     )}
                                 </div>
                             </div>
+                            <div className="text-right flex-shrink-0">
+                                <div className={`font-bold text-base ${isSold ? 'text-green-700' : isExpired ? 'text-gray-500' : 'text-gray-900'}`}>
+                                    R$ {formatCurrency(sim.sellingPrice)}
+                                </div>
+                                <div className="text-[10px] text-gray-400 flex items-center justify-end gap-1">
+                                    <Calendar className="w-3 h-3" />
+                                    {formatDate(sim.createdAt).split(',')[0]}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Status Badges Row */}
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            {isSold ? (
+                                <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase">
+                                    <CheckCircle2 className="w-3 h-3" /> Vendido
+                                </span>
+                            ) : (
+                                <>
+                                    {isExpired && (
+                                        <span className="inline-flex items-center gap-1 bg-gray-200 text-gray-600 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase">
+                                            <History className="w-3 h-3" /> Obsoleto
+                                        </span>
+                                    )}
+                                    {isOutOfStock && (
+                                        <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-600 px-2 py-0.5 rounded-md text-[10px] font-medium uppercase border border-amber-100">
+                                            <AlertCircle className="w-3 h-3" /> Sem Estoque
+                                        </span>
+                                    )}
+                                    {isOrdered && (
+                                        <span className="inline-flex items-center gap-1 bg-purple-50 text-purple-600 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase border border-purple-100">
+                                            <ShoppingBag className="w-3 h-3" /> Pedido Realizado
+                                        </span>
+                                    )}
+                                </>
+                            )}
                             
-                            <div className="flex items-center gap-2">
-                                {onSelect && (
-                                    <button
-                                        onClick={() => onSelect(sim)}
-                                        className="bg-gray-50 text-blue-600 hover:bg-blue-50 hover:text-blue-700 px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-1 transition-colors"
-                                    >
-                                        <ExternalLink className="w-4 h-4" />
-                                        Abrir
-                                    </button>
-                                )}
-                                
-                                <button 
+                            {/* If Manual mode */}
+                            {sim.mode === 'SIMULATION' && !isSold && !isExpired && (
+                                <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md text-[10px] font-medium uppercase">
+                                    Manual
+                                </span>
+                            )}
+                        </div>
+
+                        {/* Actions Row (Bottom Right) */}
+                        <div className="flex justify-end items-center gap-2 mt-1 pt-2 border-t border-gray-50">
+                             
+                             {/* Order Button (Fill Inventory) */}
+                             {showOrderButton && onOrder && (
+                                <button
                                     type="button"
-                                    onClick={(e) => handleClickDelete(e, sim.id)}
-                                    disabled={isDeleting}
+                                    onClick={(e) => handleClickOrder(e, sim)}
+                                    disabled={isOrdering}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors bg-purple-50 text-purple-600 hover:bg-purple-100 disabled:opacity-50"
+                                    title="Cadastrar no Estoque (Fazer Pedido)"
+                                >
+                                    {isOrdering ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShoppingBag className="w-3.5 h-3.5" />}
+                                    Fazer Pedido
+                                </button>
+                             )}
+
+                             {/* Sell Button - Now Allowed even if Out of Stock */}
+                             {!isSold && onSell && (
+                                     <button
+                                        type="button"
+                                        onClick={(e) => handleClickSell(e, sim.id, sim)}
+                                        disabled={isSelling}
+                                        className={`
+                                            flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg transition-all text-xs font-bold
+                                            ${isConfirmingSell 
+                                                ? 'bg-green-600 text-white' 
+                                                : 'bg-green-50 text-green-600 hover:bg-green-100'}
+                                        `}
+                                     >
+                                        {isSelling ? (
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        ) : isConfirmingSell ? (
+                                            "Confirmar?"
+                                        ) : (
+                                            <>
+                                               <DollarSign className="w-3.5 h-3.5" /> Vender
+                                            </>
+                                        )}
+                                     </button>
+                             )}
+
+                            {/* Open Button (Handles Edit vs Copy based on Expiration) */}
+                            {!isSold && onSelect && (
+                                <button
+                                    onClick={() => handleOpen(sim, isExpired)}
                                     className={`
-                                        flex items-center justify-center gap-1 px-3 py-2 rounded-xl transition-all flex-shrink-0 shadow-sm font-medium text-sm
-                                        ${isConfirming 
-                                            ? 'bg-red-600 text-white hover:bg-red-700 w-auto' 
-                                            : 'bg-gray-50 text-gray-400 hover:text-red-600 hover:bg-red-50 w-10'}
+                                        px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors
+                                        ${isExpired 
+                                            ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' 
+                                            : 'bg-gray-50 text-blue-600 hover:bg-blue-50'}
                                     `}
                                 >
-                                    {isDeleting ? (
-                                        <Loader2 className="w-5 h-5 animate-spin text-red-500" />
-                                    ) : isConfirming ? (
+                                    {isExpired ? (
                                         <>
-                                            <Trash2 className="w-4 h-4" />
-                                            <span>Confirmar?</span>
+                                            <Copy className="w-3.5 h-3.5" /> Novo Orçamento
                                         </>
                                     ) : (
-                                        <Trash2 className="w-5 h-5" />
+                                        <>
+                                            <ExternalLink className="w-3.5 h-3.5" /> Abrir
+                                        </>
                                     )}
                                 </button>
-                            </div>
-                        </div>
+                            )}
 
-                        <div className="py-1">
-                            <span className="text-xs text-gray-400 uppercase tracking-wide">Produto</span>
-                            <p className="font-medium text-gray-800 leading-snug break-words">{sim.productName}</p>
-                        </div>
-
-                        <div className="flex items-end justify-between bg-gray-50 p-3 rounded-xl">
-                            <div>
-                                <span className="text-xs text-gray-400 block mb-1">Valor Venda</span>
-                                <span className="font-bold text-lg text-green-700">
-                                    R$ {sim.sellingPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                </span>
-                            </div>
-                            <div className="text-right">
-                                <div className="flex items-center gap-1 text-xs text-gray-400 mb-1 justify-end">
-                                    <DollarSign className="w-3 h-3" />
-                                    <span>Custo: {sim.totalCostBrl.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                                </div>
-                                <div className="flex items-center gap-1 text-xs text-gray-400 justify-end">
-                                    <Calendar className="w-3 h-3" />
-                                    <span>{formatDate(sim.createdAt)}</span>
-                                </div>
-                            </div>
+                             {/* Delete Button */}
+                            <button 
+                                type="button"
+                                onClick={(e) => handleClickDelete(e, sim.id)}
+                                disabled={isDeleting}
+                                className={`
+                                    flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg transition-all text-xs font-bold
+                                    ${isConfirmingDelete 
+                                        ? 'bg-red-600 text-white' 
+                                        : 'bg-gray-50 text-gray-400 hover:text-red-600 hover:bg-red-50'}
+                                `}
+                            >
+                                {isDeleting ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : isConfirmingDelete ? (
+                                    "Apagar?"
+                                ) : (
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                )}
+                            </button>
                         </div>
                     </div>
                 );
