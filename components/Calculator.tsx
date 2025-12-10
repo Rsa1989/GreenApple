@@ -1,16 +1,18 @@
 
 import React, { useState, useEffect } from 'react';
-import { ProductItem, CalculatorMode, AppSettings } from '../types';
+import { ProductItem, CalculatorMode, AppSettings, SimulationItem } from '../types';
 import { Input } from './Input';
 import { fetchCurrentExchangeRate } from '../services/geminiService';
-import { Calculator, RefreshCw, Loader2, Sparkles, AlertCircle, CreditCard, Box, Edit3, Share2, MessageCircle, CheckCircle2, Circle } from 'lucide-react';
+import { Calculator, RefreshCw, Loader2, Sparkles, AlertCircle, CreditCard, Box, Edit3, Share2, MessageCircle, CheckCircle2, Circle, User, Save, Smartphone, ChevronDown } from 'lucide-react';
 
 interface CalculatorProps {
   inventory: ProductItem[];
   settings: AppSettings;
+  onSaveSimulation?: (simulation: SimulationItem) => void;
+  initialData?: SimulationItem | null;
 }
 
-export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, settings }) => {
+export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, settings, onSaveSimulation, initialData }) => {
   const [mode, setMode] = useState<CalculatorMode>(CalculatorMode.FROM_STOCK);
   const [selectedProductId, setSelectedProductId] = useState<string>('');
   
@@ -22,20 +24,64 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
   const [simTax, setSimTax] = useState('');
   const [margin, setMargin] = useState('20');
   
+  // Manual Product Details State
+  const [manualName, setManualName] = useState('');
+  const [manualMemory, setManualMemory] = useState('');
+  const [manualColor, setManualColor] = useState('');
+  
+  // Customer Data for Simulation
+  const [customerName, setCustomerName] = useState('');
+  const [customerSurname, setCustomerSurname] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+
   const [loadingRate, setLoadingRate] = useState(false);
   const [rateSource, setRateSource] = useState<string | null>(null);
 
   // Installment Selection State
   const [selectedInstallments, setSelectedInstallments] = useState<number[]>([]);
 
-  // Initialize defaults
+  // Initialize defaults only if NOT loading initialData
   useEffect(() => {
-    if (mode === CalculatorMode.SIMULATION) {
+    if (mode === CalculatorMode.SIMULATION && !initialData) {
       if (settings.defaultFeeUsd > 0 && !simFeeUsd) setSimFeeUsd(settings.defaultFeeUsd.toString());
       if (settings.defaultSpread > 0 && !simSpread) setSimSpread(settings.defaultSpread.toString());
       if (settings.defaultImportTax > 0 && !simTax) setSimTax(settings.defaultImportTax.toString());
     }
-  }, [mode, settings]);
+  }, [mode, settings, initialData]);
+
+  // Load Initial Data when provided (e.g., from History)
+  useEffect(() => {
+      if (initialData) {
+          setMode(CalculatorMode.SIMULATION);
+          setCustomerName(initialData.customerName || '');
+          setCustomerSurname(initialData.customerSurname || '');
+          setCustomerPhone(initialData.customerPhone || '');
+          
+          // Pre-fill manual name with the full product name from history
+          setManualName(initialData.productName || '');
+          setManualMemory('');
+          setManualColor('');
+          
+          setSimCostUsd(initialData.costUsd.toString());
+          setSimFeeUsd(initialData.feeUsd.toString());
+          setSimRate(initialData.exchangeRate.toString()); // Effective rate
+          setSimSpread('0'); // Spread is already inside exchangeRate in history item
+          
+          // Reverse calculate Tax: Total - (Base * Rate)
+          const baseUsd = initialData.costUsd + initialData.feeUsd;
+          const calculatedTax = initialData.totalCostBrl - (baseUsd * initialData.exchangeRate);
+          setSimTax(Math.max(0, calculatedTax).toFixed(2));
+
+          // Reverse calculate Margin: ((Sell / Cost) - 1) * 100
+          if (initialData.totalCostBrl > 0) {
+              const calculatedMargin = ((initialData.sellingPrice / initialData.totalCostBrl) - 1) * 100;
+              setMargin(calculatedMargin.toFixed(2));
+          }
+          
+          // Scroll to top
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+  }, [initialData]);
 
   // Initialize all installments as selected by default when settings change
   useEffect(() => {
@@ -43,6 +89,11 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
       setSelectedInstallments(settings.installmentRules.map(r => r.installments));
     }
   }, [settings.installmentRules]);
+
+  // Reset selected product when mode changes
+  useEffect(() => {
+    setSelectedProductId('');
+  }, [mode]);
 
   const handleFetchRate = async () => {
     setLoadingRate(true);
@@ -64,18 +115,27 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
     let importTax = 0;
     let productName = "Orçamento Personalizado";
 
-    if (mode === CalculatorMode.FROM_STOCK) {
+    if (mode === CalculatorMode.FROM_STOCK || mode === CalculatorMode.FROM_USED_STOCK) {
       const item = inventory.find(i => i.id === selectedProductId);
       if (item) {
         costBrl = item.totalCostBrl;
+        
+        // For used items, we usually don't have USD breakdown, so we keep 0 or use stored if any
         prodUsd = item.costUsd;
         feeUsd = item.feeUsd;
         baseUsd = prodUsd + feeUsd;
-        effectiveRate = item.exchangeRate + item.spread;
+        effectiveRate = item.exchangeRate > 0 ? (item.exchangeRate + item.spread) : 0;
         importTax = item.importTaxBrl;
-        productName = `${item.name} ${item.memory} ${item.color}`;
+        
+        let nameInfo = `${item.name} ${item.memory} ${item.color}`;
+        if (item.isUsed) {
+            nameInfo += " (USADO)";
+            if (item.batteryHealth) nameInfo += ` Bat. ${item.batteryHealth}%`;
+        }
+        productName = nameInfo;
       }
     } else {
+      // Manual Mode
       prodUsd = parseFloat(simCostUsd) || 0;
       feeUsd = parseFloat(simFeeUsd) || 0;
       const r = parseFloat(simRate) || 0;
@@ -86,6 +146,12 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
       effectiveRate = r + s;
       costBrl = (baseUsd * effectiveRate) + t;
       importTax = t;
+      
+      // Construct Product Name from Manual Fields
+      const parts = [manualName, manualMemory, manualColor].filter(p => p && p.trim() !== '');
+      if (parts.length > 0) {
+          productName = parts.join(' ');
+      }
     }
 
     const marginPercent = parseFloat(margin) || 0;
@@ -128,6 +194,8 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
     let message = settings.whatsappTemplate || "";
     
     // Replace Variables
+    // Logic: If in Manual mode and we have initialData but no manual typing yet, use initial data name. 
+    // Otherwise rely on calculated productName
     message = message.replace(/{produto}/g, productName);
     message = message.replace(/{preco}/g, formatCurrency(sellPrice));
     message = message.replace(/{parcelas}/g, installmentLines || "(Consulte condições)");
@@ -136,35 +204,118 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
     window.open(`https://wa.me/?text=${encodedMessage}`, '_blank');
   };
 
+  const handleSaveClick = () => {
+      // Validate customer name regardless of mode
+      if (!customerName) {
+          alert("Por favor, preencha o nome do cliente.");
+          return;
+      }
+
+      if (onSaveSimulation) {
+          const simItem: SimulationItem = {
+              id: '', // Will be generated by Firestore
+              customerName: customerName || "Cliente",
+              customerSurname: customerSurname || "",
+              customerPhone: customerPhone || "",
+              productName: productName,
+              costUsd: prodUsd,
+              feeUsd: feeUsd,
+              exchangeRate: effectiveRate,
+              totalCostBrl: costBrl,
+              sellingPrice: sellPrice,
+              createdAt: Date.now()
+          };
+          onSaveSimulation(simItem);
+      }
+  };
+
+  // Filter products based on selected mode
+  const filteredInventory = inventory.filter(item => {
+    if (mode === CalculatorMode.FROM_USED_STOCK) {
+        return item.isUsed === true;
+    }
+    if (mode === CalculatorMode.FROM_STOCK) {
+        return item.isUsed !== true;
+    }
+    return true;
+  });
+  
   return (
     <div className="flex flex-col gap-6 animate-fade-in pb-20">
       
       {/* iOS Style Segmented Control */}
-      <div className="bg-gray-200 p-1 rounded-xl flex shadow-inner">
+      <div className="bg-gray-200 p-1 rounded-xl flex shadow-inner overflow-x-auto no-scrollbar">
         <button
           onClick={() => setMode(CalculatorMode.FROM_STOCK)}
-          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+          className={`flex-1 flex items-center justify-center gap-1 py-2.5 px-2 rounded-lg text-[11px] sm:text-sm font-semibold transition-all whitespace-nowrap ${
             mode === CalculatorMode.FROM_STOCK ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
           }`}
         >
           <Box className="w-4 h-4" />
-          Estoque
+          Novos
+        </button>
+        <button
+          onClick={() => setMode(CalculatorMode.FROM_USED_STOCK)}
+          className={`flex-1 flex items-center justify-center gap-1 py-2.5 px-2 rounded-lg text-[11px] sm:text-sm font-semibold transition-all whitespace-nowrap ${
+            mode === CalculatorMode.FROM_USED_STOCK ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+          }`}
+        >
+          <Smartphone className="w-4 h-4" />
+          Usados
         </button>
         <button
           onClick={() => setMode(CalculatorMode.SIMULATION)}
-          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+          className={`flex-1 flex items-center justify-center gap-1 py-2.5 px-2 rounded-lg text-[11px] sm:text-sm font-semibold transition-all whitespace-nowrap ${
             mode === CalculatorMode.SIMULATION ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
           }`}
         >
           <Edit3 className="w-4 h-4" />
-          Simular
+          Manual
         </button>
       </div>
+      
+      {initialData && mode === CalculatorMode.SIMULATION && (
+         <div className="bg-blue-50 text-blue-800 p-3 rounded-xl border border-blue-100 flex items-center gap-2 text-sm">
+             <Edit3 className="w-4 h-4" />
+             Editando orçamento de: <strong>{initialData.productName}</strong>
+         </div>
+      )}
 
       <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-5">
-            {mode === CalculatorMode.FROM_STOCK ? (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2 ml-1">Produto</label>
+            
+            {/* Customer Data Section - Always Visible */}
+            <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 space-y-3">
+               <div className="flex items-center gap-2 text-gray-800 font-medium pb-2 border-b border-gray-200">
+                   <User className="w-4 h-4" />
+                   Dados do Cliente
+               </div>
+               <Input 
+                    label="Nome" 
+                    placeholder="Nome do cliente" 
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+               />
+               <div className="grid grid-cols-2 gap-3">
+                   <Input 
+                        label="Sobrenome" 
+                        placeholder="Sobrenome" 
+                        value={customerSurname}
+                        onChange={(e) => setCustomerSurname(e.target.value)}
+                   />
+                   <Input 
+                        label="Telefone" 
+                        placeholder="(00) 00000-0000" 
+                        value={customerPhone}
+                        onChange={(e) => setCustomerPhone(e.target.value)}
+                   />
+               </div>
+            </div>
+
+            {(mode === CalculatorMode.FROM_STOCK || mode === CalculatorMode.FROM_USED_STOCK) ? (
+              <div className="pt-2 border-t border-gray-100 animate-fade-in">
+                <label className="block text-sm font-medium text-gray-700 mb-2 ml-1">
+                    {mode === CalculatorMode.FROM_USED_STOCK ? "Selecionar Aparelho Usado" : "Selecionar Produto Novo"}
+                </label>
                 <div className="relative">
                   <select
                     value={selectedProductId}
@@ -172,26 +323,55 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
                     className="w-full appearance-none px-4 py-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-apple-500 outline-none bg-white text-base"
                   >
                     <option value="">Selecione um item...</option>
-                    {inventory.map(item => (
+                    {filteredInventory.map(item => (
                       <option key={item.id} value={item.id}>
-                        {item.name} ({item.memory} - {item.color})
+                        {item.name} ({item.memory} - {item.color}) {item.isUsed ? `[Bateria: ${item.batteryHealth}%]` : ''}
                       </option>
                     ))}
                   </select>
                   <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-500">
-                    <svg className="h-4 w-4 fill-current" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/></svg>
+                    <ChevronDown className="h-4 w-4" />
                   </div>
                 </div>
                 
-                {inventory.length === 0 && (
+                {filteredInventory.length === 0 && (
                   <div className="mt-4 p-3 bg-amber-50 rounded-xl border border-amber-100 text-amber-700 text-sm flex items-center gap-2">
                       <AlertCircle className="w-4 h-4" />
-                      Sem produtos cadastrados.
+                      {mode === CalculatorMode.FROM_USED_STOCK 
+                        ? "Nenhum aparelho usado cadastrado." 
+                        : "Sem produtos novos cadastrados."}
                   </div>
                 )}
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-4 pt-2 border-t border-gray-100 animate-fade-in">
+                
+                {/* Manual Product Details */}
+                <div className="space-y-3">
+                    <Input 
+                        label="Nome do Produto" 
+                        placeholder="Ex: iPhone 15 Pro Max" 
+                        value={manualName} 
+                        onChange={(e) => setManualName(e.target.value)} 
+                    />
+                    <div className="grid grid-cols-2 gap-4">
+                        <Input 
+                            label="Memória" 
+                            placeholder="Ex: 256GB" 
+                            value={manualMemory} 
+                            onChange={(e) => setManualMemory(e.target.value)} 
+                        />
+                        <Input 
+                            label="Cor" 
+                            placeholder="Ex: Titânio Natural" 
+                            value={manualColor} 
+                            onChange={(e) => setManualColor(e.target.value)} 
+                        />
+                    </div>
+                </div>
+
+                <hr className="border-gray-100" />
+
                 <div className="grid grid-cols-2 gap-4">
                     <Input label="Valor Produto" subLabel="(USD)" value={simCostUsd} onChange={(e) => setSimCostUsd(e.target.value)} type="number" placeholder="0.00" />
                     <Input label="Taxa" subLabel="(USD)" value={simFeeUsd} onChange={(e) => setSimFeeUsd(e.target.value)} type="number" placeholder="0.00" />
@@ -266,25 +446,48 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
                  <span>Custo Total (BRL)</span>
                  <span className="text-white font-medium">R$ {costBrl.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
               </div>
-              <div className="flex justify-between text-xs text-gray-500">
-                 <span>Dólar Efetivo</span>
-                 <span>R$ {effectiveRate.toFixed(3)}</span>
-              </div>
-              <div className="flex justify-between text-xs text-gray-500">
-                 <span>Total USD</span>
-                 <span>$ {baseUsd.toFixed(2)}</span>
+              
+              {effectiveRate > 0 && (
+                <div className="flex justify-between text-xs text-gray-500">
+                    <span>Dólar Efetivo</span>
+                    <span>R$ {effectiveRate.toFixed(3)}</span>
+                </div>
+              )}
+              {baseUsd > 0 && (
+                <div className="flex justify-between text-xs text-gray-500">
+                    <span>Total USD</span>
+                    <span>$ {baseUsd.toFixed(2)}</span>
+                </div>
+              )}
+              
+              {/* Show constructed product name in result for verification */}
+              <div className="flex justify-between text-xs text-gray-500 border-t border-gray-800 pt-2 mt-2">
+                 <span>Item:</span>
+                 <span className="text-gray-300 max-w-[200px] truncate text-right">{productName}</span>
               </div>
           </div>
           
-          {sellPrice > 0 && (
-            <button 
-                onClick={handleWhatsAppShare}
-                className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-lg active:scale-[0.98] transition-all"
-            >
-                <MessageCircle className="w-5 h-5" />
-                Enviar no WhatsApp
-            </button>
-          )}
+          <div className="grid grid-cols-2 gap-3">
+              {sellPrice > 0 && (
+                <button 
+                    onClick={handleSaveClick}
+                    className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-lg active:scale-[0.98] transition-all"
+                >
+                    <Save className="w-5 h-5" />
+                    Salvar
+                </button>
+              )}
+              
+              {sellPrice > 0 && (
+                <button 
+                    onClick={handleWhatsAppShare}
+                    className={`bg-green-600 hover:bg-green-500 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-lg active:scale-[0.98] transition-all`}
+                >
+                    <MessageCircle className="w-5 h-5" />
+                    WhatsApp
+                </button>
+              )}
+          </div>
       </div>
 
       {/* Installment Table Section */}

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { AppSettings } from '../types';
 import { Input } from './Input';
-import { Save, Settings, Palette, Upload, Trash2, ChevronRight, MessageCircle } from 'lucide-react';
+import { Save, ChevronRight, Upload, Trash2, MessageCircle, Lock, Eye, EyeOff } from 'lucide-react';
 
 interface ConfigurationProps {
   settings: AppSettings;
@@ -12,6 +12,7 @@ interface ConfigurationProps {
 export const Configuration: React.FC<ConfigurationProps> = ({ settings, onSave }) => {
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
   const [showSaved, setShowSaved] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     setLocalSettings(settings);
@@ -22,6 +23,13 @@ export const Configuration: React.FC<ConfigurationProps> = ({ settings, onSave }
       ...prev,
       [field]: parseFloat(value) || 0
     }));
+  };
+  
+  const handleTextChange = (field: keyof AppSettings, value: string) => {
+      setLocalSettings(prev => ({
+        ...prev,
+        [field]: value
+      }));
   };
   
   const handleColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -91,6 +99,35 @@ export const Configuration: React.FC<ConfigurationProps> = ({ settings, onSave }
         
         <form onSubmit={handleSubmit} className="space-y-6">
           
+          {/* Section: Security */}
+          <div>
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 ml-4">Segurança</h3>
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+               <div className="relative">
+                   <label className="text-sm font-medium text-gray-700 flex items-center gap-2 mb-2">
+                       <Lock className="w-4 h-4 text-apple-600" />
+                       Senha de Acesso
+                   </label>
+                   <div className="relative">
+                        <input
+                            type={showPassword ? "text" : "password"}
+                            value={localSettings.adminPassword}
+                            onChange={(e) => handleTextChange('adminPassword', e.target.value)}
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-apple-500 outline-none text-base bg-gray-50 focus:bg-white pr-12"
+                        />
+                        <button 
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                        >
+                            {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                        </button>
+                   </div>
+                   <p className="text-xs text-gray-400 mt-2">Esta senha será solicitada ao abrir o aplicativo.</p>
+               </div>
+            </div>
+          </div>
+
           {/* Section: Visual Identity */}
           <div>
              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 ml-4">Identidade Visual</h3>

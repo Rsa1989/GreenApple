@@ -11,6 +11,22 @@ export interface ProductItem {
   importTaxBrl: number;
   totalCostBrl: number;
   createdAt: number;
+  isUsed?: boolean; // New field
+  batteryHealth?: number; // New field
+}
+
+export interface SimulationItem {
+  id: string;
+  customerName: string;
+  customerSurname: string;
+  customerPhone: string;
+  productName: string;
+  costUsd: number;
+  feeUsd: number;
+  exchangeRate: number;
+  totalCostBrl: number;
+  sellingPrice: number;
+  createdAt: number;
 }
 
 export interface CalculationResult {
@@ -24,6 +40,7 @@ export interface CalculationResult {
 
 export enum CalculatorMode {
   FROM_STOCK = 'FROM_STOCK',
+  FROM_USED_STOCK = 'FROM_USED_STOCK', // New mode
   SIMULATION = 'SIMULATION'
 }
 
@@ -42,4 +59,5 @@ export interface AppSettings {
   backgroundColor: string; // Hex code for app background
   logoUrl: string | null; // Base64 string
   whatsappTemplate: string; // Custom message template
+  adminPassword: string; // Login password
 }

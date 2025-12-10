@@ -10,9 +10,10 @@ import {
   orderBy,
   getDoc,
   FirestoreError,
-  updateDoc
+  updateDoc,
+  addDoc
 } from "firebase/firestore";
-import { ProductItem, AppSettings } from "../types";
+import { ProductItem, AppSettings, SimulationItem } from "../types";
 
 // --- INVENTORY OPERATIONS ---
 
@@ -64,6 +65,48 @@ export const deleteInventoryItem = async (id: string) => {
     await deleteDoc(doc(db, "products", id));
   } catch (error) {
     console.error("Erro ao deletar item:", error);
+    throw error;
+  }
+};
+
+// --- SIMULATION OPERATIONS ---
+
+export const subscribeToSimulations = (
+  onData: (items: SimulationItem[]) => void,
+  onError: (error: FirestoreError) => void
+) => {
+  const q = query(collection(db, "simulations"), orderBy("createdAt", "desc"));
+  
+  return onSnapshot(q, {
+    next: (snapshot) => {
+      const items = snapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id
+      })) as SimulationItem[];
+      onData(items);
+    },
+    error: (error) => {
+      console.error("Firestore Simulation Subscription Error:", error);
+      onError(error);
+    }
+  });
+};
+
+export const addSimulation = async (simulation: SimulationItem) => {
+  try {
+    // We use addDoc to let Firestore generate the ID automatically for logs
+    await addDoc(collection(db, "simulations"), simulation);
+  } catch (error) {
+    console.error("Erro ao salvar simulação:", error);
+    throw error;
+  }
+};
+
+export const deleteSimulation = async (id: string) => {
+  try {
+    await deleteDoc(doc(db, "simulations", id));
+  } catch (error) {
+    console.error("Erro ao deletar simulação:", error);
     throw error;
   }
 };

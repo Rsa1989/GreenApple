@@ -3,15 +3,20 @@ import React, { useState, useEffect } from 'react';
 import { Inventory } from './components/Inventory';
 import { CalculatorComponent } from './components/Calculator';
 import { Configuration } from './components/Configuration';
-import { ProductItem, AppSettings } from './types';
-import { LayoutList, Calculator as CalcIcon, Settings, Package2, WifiOff, AlertTriangle, ExternalLink } from 'lucide-react';
+import { SimulationHistory } from './components/SimulationHistory';
+import { Login } from './components/Login';
+import { ProductItem, AppSettings, SimulationItem } from './types';
+import { LayoutList, Calculator as CalcIcon, Settings, Package2, WifiOff, AlertTriangle, ExternalLink, History } from 'lucide-react';
 import { 
   subscribeToInventory, 
   addInventoryItem, 
   updateInventoryItem,
   deleteInventoryItem, 
   subscribeToSettings, 
-  saveSettings 
+  saveSettings,
+  addSimulation,
+  subscribeToSimulations,
+  deleteSimulation
 } from './services/firestoreService';
 
 // Helper to convert Hex to RGB array
@@ -50,20 +55,41 @@ const DEFAULT_SETTINGS: AppSettings = {
 💳 Parcelamento:
 {parcelas}
 
-Entre em contato para fechar!`
+Entre em contato para fechar!`,
+  adminPassword: '1234'
 };
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'inventory' | 'calculator' | 'settings'>('inventory');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [activeTab, setActiveTab] = useState<'inventory' | 'calculator' | 'history' | 'settings'>('inventory');
   const [items, setItems] = useState<ProductItem[]>([]);
+  const [simulations, setSimulations] = useState<SimulationItem[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  
+  // State for editing simulation
+  const [simulationToEdit, setSimulationToEdit] = useState<SimulationItem | null>(null);
   
   // Database Error States
   const [dbError, setDbError] = useState<string | null>(null);
   const [isPermissionError, setIsPermissionError] = useState(false);
 
-  // 1. Subscribe to Inventory Data from Firestore
+  // Check Session Storage for Auth (SessionStorage clears when tab/browser closes)
   useEffect(() => {
+    const auth = sessionStorage.getItem('greenapple_auth');
+    if (auth === 'true') {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const handleLogin = () => {
+    setIsAuthenticated(true);
+    sessionStorage.setItem('greenapple_auth', 'true');
+  };
+
+  // 1. Subscribe to Inventory Data
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
     let unsubscribe: () => void;
     
     unsubscribe = subscribeToInventory(
@@ -90,19 +116,17 @@ const App: React.FC = () => {
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, []);
+  }, [isAuthenticated]);
 
-  // 2. Subscribe to Settings Data from Firestore
+  // 2. Subscribe to Settings Data
   useEffect(() => {
     let unsubscribe: () => void;
     
     unsubscribe = subscribeToSettings(
       (data) => {
-        // Merge with defaults to ensure new fields (like whatsappTemplate) exist
         setSettings(prev => ({ ...DEFAULT_SETTINGS, ...data }));
       },
       (error) => {
-          // Silent fail for settings or just log, as inventory error usually covers it
           console.warn("Settings sync warning:", error.message);
       }
     );
@@ -111,6 +135,26 @@ const App: React.FC = () => {
         if (unsubscribe) unsubscribe();
     }
   }, []);
+
+  // 3. Subscribe to Simulations Data
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let unsubscribe: () => void;
+    
+    unsubscribe = subscribeToSimulations(
+      (data) => {
+        setSimulations(data);
+      },
+      (error) => {
+        console.error("Simulation Subscription Error:", error);
+      }
+    );
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [isAuthenticated]);
 
   // Update Theme CSS Variables
   useEffect(() => {
@@ -136,7 +180,9 @@ const App: React.FC = () => {
       root.style.setProperty(`--color-apple-${key}`, value.join(' '));
     });
 
-    document.body.style.backgroundColor = settings.backgroundColor;
+    if (document.body) {
+        document.body.style.backgroundColor = settings.backgroundColor;
+    }
 
   }, [settings.themeColor, settings.backgroundColor]);
 
@@ -160,7 +206,7 @@ const App: React.FC = () => {
     try {
         await deleteInventoryItem(id);
     } catch (error: any) {
-        alert("Erro ao deletar: " + error.message);
+        alert("Erro ao deletar item: " + error.message);
     }
   };
 
@@ -172,6 +218,35 @@ const App: React.FC = () => {
         alert("Erro ao salvar configurações: " + error.message);
     }
   };
+
+  const handleSaveSimulation = async (simulation: SimulationItem) => {
+    try {
+        await addSimulation(simulation);
+        // Switch to history tab to show success/result
+        setActiveTab('history');
+    } catch (error: any) {
+        alert("Erro ao salvar simulação: " + error.message);
+    }
+  };
+
+  const handleDeleteSimulation = async (id: string) => {
+      try {
+          await deleteSimulation(id);
+      } catch (error: any) {
+          alert("Erro ao apagar simulação: " + error.message);
+      }
+  };
+  
+  const handleEditSimulation = (simulation: SimulationItem) => {
+      setSimulationToEdit(simulation);
+      setActiveTab('calculator');
+  };
+
+  // --- RENDER LOGIC ---
+
+  if (!isAuthenticated) {
+      return <Login settings={settings} onLogin={handleLogin} />;
+  }
 
   if (isPermissionError) {
       return (
@@ -267,6 +342,16 @@ const App: React.FC = () => {
           <CalculatorComponent 
             inventory={items} 
             settings={settings}
+            onSaveSimulation={handleSaveSimulation}
+            initialData={simulationToEdit}
+          />
+        )}
+
+        {activeTab === 'history' && (
+          <SimulationHistory 
+            simulations={simulations}
+            onDelete={handleDeleteSimulation}
+            onSelect={handleEditSimulation}
           />
         )}
 
@@ -299,6 +384,16 @@ const App: React.FC = () => {
             >
               <CalcIcon className={`w-6 h-6 ${activeTab === 'calculator' ? 'fill-current' : ''}`} strokeWidth={activeTab === 'calculator' ? 2 : 1.5} />
               <span className="text-[10px] font-medium">Calculadora</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`flex-1 flex flex-col items-center justify-center gap-1 h-full transition-all ${
+                activeTab === 'history' ? 'text-apple-600' : 'text-gray-400'
+              }`}
+            >
+              <History className={`w-6 h-6 ${activeTab === 'history' ? 'fill-current' : ''}`} strokeWidth={activeTab === 'history' ? 2 : 1.5} />
+              <span className="text-[10px] font-medium">Histórico</span>
             </button>
 
             <button
