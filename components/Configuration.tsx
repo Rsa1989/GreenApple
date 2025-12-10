@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { AppSettings } from '../types';
 import { Input } from './Input';
-import { Save, Settings, Palette, Upload, Trash2, ChevronRight } from 'lucide-react';
+import { Save, Settings, Palette, Upload, Trash2, ChevronRight, MessageCircle } from 'lucide-react';
 
 interface ConfigurationProps {
   settings: AppSettings;
@@ -71,6 +71,13 @@ export const Configuration: React.FC<ConfigurationProps> = ({ settings, onSave }
     };
     setLocalSettings(prev => ({ ...prev, installmentRules: newRules }));
   };
+
+  const handleTemplateChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      setLocalSettings(prev => ({
+          ...prev,
+          whatsappTemplate: e.target.value
+      }));
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -197,6 +204,31 @@ export const Configuration: React.FC<ConfigurationProps> = ({ settings, onSave }
                 value={localSettings.defaultImportTax}
                 onChange={(e) => handleChange('defaultImportTax', e.target.value)}
               />
+            </div>
+          </div>
+
+          {/* Section: WhatsApp Template */}
+          <div>
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 ml-4">Compartilhamento</h3>
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+                <div className="flex items-center gap-2 mb-3">
+                    <MessageCircle className="w-5 h-5 text-green-600" />
+                    <span className="font-medium text-gray-900">Mensagem do WhatsApp</span>
+                </div>
+                <p className="text-sm text-gray-500 mb-3">
+                    Personalize a mensagem enviada ao cliente. Use as variáveis abaixo:
+                </p>
+                <div className="flex flex-wrap gap-2 mb-4">
+                    <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-md text-xs font-mono">{`{produto}`}</span>
+                    <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-md text-xs font-mono">{`{preco}`}</span>
+                    <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-md text-xs font-mono">{`{parcelas}`}</span>
+                </div>
+                <textarea
+                    value={localSettings.whatsappTemplate || ''}
+                    onChange={handleTemplateChange}
+                    className="w-full h-40 p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-apple-500 outline-none text-sm leading-relaxed"
+                    placeholder="Olá! Segue o orçamento para {produto}..."
+                />
             </div>
           </div>
 

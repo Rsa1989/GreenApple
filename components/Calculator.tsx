@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { ProductItem, CalculatorMode, AppSettings } from '../types';
 import { Input } from './Input';
 import { fetchCurrentExchangeRate } from '../services/geminiService';
-import { Calculator, RefreshCw, Loader2, Sparkles, AlertCircle, CreditCard, Box, Edit3 } from 'lucide-react';
+import { Calculator, RefreshCw, Loader2, Sparkles, AlertCircle, CreditCard, Box, Edit3, Share2, MessageCircle, CheckCircle2, Circle } from 'lucide-react';
 
 interface CalculatorProps {
   inventory: ProductItem[];
@@ -25,6 +25,10 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
   const [loadingRate, setLoadingRate] = useState(false);
   const [rateSource, setRateSource] = useState<string | null>(null);
 
+  // Installment Selection State
+  const [selectedInstallments, setSelectedInstallments] = useState<number[]>([]);
+
+  // Initialize defaults
   useEffect(() => {
     if (mode === CalculatorMode.SIMULATION) {
       if (settings.defaultFeeUsd > 0 && !simFeeUsd) setSimFeeUsd(settings.defaultFeeUsd.toString());
@@ -32,6 +36,13 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
       if (settings.defaultImportTax > 0 && !simTax) setSimTax(settings.defaultImportTax.toString());
     }
   }, [mode, settings]);
+
+  // Initialize all installments as selected by default when settings change
+  useEffect(() => {
+    if (settings.installmentRules.length > 0) {
+      setSelectedInstallments(settings.installmentRules.map(r => r.installments));
+    }
+  }, [settings.installmentRules]);
 
   const handleFetchRate = async () => {
     setLoadingRate(true);
@@ -51,6 +62,7 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
     let feeUsd = 0;
     let effectiveRate = 0;
     let importTax = 0;
+    let productName = "Orçamento Personalizado";
 
     if (mode === CalculatorMode.FROM_STOCK) {
       const item = inventory.find(i => i.id === selectedProductId);
@@ -61,6 +73,7 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
         baseUsd = prodUsd + feeUsd;
         effectiveRate = item.exchangeRate + item.spread;
         importTax = item.importTaxBrl;
+        productName = `${item.name} ${item.memory} ${item.color}`;
       }
     } else {
       prodUsd = parseFloat(simCostUsd) || 0;
@@ -79,10 +92,49 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
     const sellPrice = costBrl * (1 + marginPercent / 100);
     const profit = sellPrice - costBrl;
 
-    return { costBrl, sellPrice, profit, baseUsd, prodUsd, feeUsd, effectiveRate, importTax };
+    return { costBrl, sellPrice, profit, baseUsd, prodUsd, feeUsd, effectiveRate, importTax, productName };
   };
 
-  const { costBrl, sellPrice, profit, baseUsd, prodUsd, feeUsd, effectiveRate, importTax } = getCalculation();
+  const { costBrl, sellPrice, profit, baseUsd, prodUsd, feeUsd, effectiveRate, importTax, productName } = getCalculation();
+
+  const toggleInstallment = (installments: number) => {
+    setSelectedInstallments(prev => 
+      prev.includes(installments) 
+        ? prev.filter(i => i !== installments)
+        : [...prev, installments]
+    );
+  };
+
+  const toggleAllInstallments = () => {
+    if (selectedInstallments.length === settings.installmentRules.length) {
+      setSelectedInstallments([]);
+    } else {
+      setSelectedInstallments(settings.installmentRules.map(r => r.installments));
+    }
+  };
+
+  const handleWhatsAppShare = () => {
+    const formatCurrency = (val: number) => `R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    
+    // Generate Installment List String based on SELECTION
+    const installmentLines = settings.installmentRules
+        .filter(rule => selectedInstallments.includes(rule.installments))
+        .map(rule => {
+            const totalWithInterest = sellPrice * (1 + (rule.rate / 100));
+            const installmentValue = totalWithInterest / rule.installments;
+            return `${rule.installments}x de ${formatCurrency(installmentValue)}`;
+        }).join('\n');
+
+    let message = settings.whatsappTemplate || "";
+    
+    // Replace Variables
+    message = message.replace(/{produto}/g, productName);
+    message = message.replace(/{preco}/g, formatCurrency(sellPrice));
+    message = message.replace(/{parcelas}/g, installmentLines || "(Consulte condições)");
+
+    const encodedMessage = encodeURIComponent(message);
+    window.open(`https://wa.me/?text=${encodedMessage}`, '_blank');
+  };
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in pb-20">
@@ -223,24 +275,58 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
                  <span>$ {baseUsd.toFixed(2)}</span>
               </div>
           </div>
+          
+          {sellPrice > 0 && (
+            <button 
+                onClick={handleWhatsAppShare}
+                className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-lg active:scale-[0.98] transition-all"
+            >
+                <MessageCircle className="w-5 h-5" />
+                Enviar no WhatsApp
+            </button>
+          )}
       </div>
 
       {/* Installment Table Section */}
       {sellPrice > 0 && (
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 mb-8">
-            <div className="flex items-center gap-2 mb-4">
-              <CreditCard className="w-5 h-5 text-gray-600" />
-              <h3 className="text-lg font-semibold text-gray-800">Parcelamento</h3>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-gray-600" />
+                <h3 className="text-lg font-semibold text-gray-800">Parcelamento</h3>
+              </div>
+              <button 
+                onClick={toggleAllInstallments}
+                className="text-xs text-apple-600 font-medium hover:underline"
+              >
+                {selectedInstallments.length === settings.installmentRules.length ? 'Desmarcar todos' : 'Marcar todos'}
+              </button>
             </div>
+            
+            <p className="text-xs text-gray-400 mb-4 bg-gray-50 p-2 rounded-lg">
+                Selecione as opções abaixo para incluir na mensagem do WhatsApp.
+            </p>
+
             <div className="divide-y divide-gray-100">
               {settings.installmentRules.map((rule) => {
                 const totalWithInterest = sellPrice * (1 + (rule.rate / 100));
                 const installmentValue = totalWithInterest / rule.installments;
+                const isSelected = selectedInstallments.includes(rule.installments);
+
                 return (
-                  <div key={rule.installments} className="flex justify-between items-center py-3">
-                    <div className="flex flex-col">
-                        <span className="font-bold text-gray-900">{rule.installments}x</span>
-                        <span className="text-xs text-gray-400">{rule.rate > 0 ? `+${rule.rate}%` : 'Sem juros'}</span>
+                  <div 
+                    key={rule.installments} 
+                    className="flex justify-between items-center py-3 cursor-pointer"
+                    onClick={() => toggleInstallment(rule.installments)}
+                  >
+                    <div className="flex items-center gap-3">
+                        <div className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${isSelected ? 'bg-apple-500 border-apple-500' : 'border-gray-300 bg-white'}`}>
+                            {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="font-bold text-gray-900">{rule.installments}x</span>
+                            <span className="text-xs text-gray-400">{rule.rate > 0 ? `+${rule.rate}%` : 'Sem juros'}</span>
+                        </div>
                     </div>
                     <div className="text-right">
                          <div className="font-bold text-apple-700">R$ {installmentValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>

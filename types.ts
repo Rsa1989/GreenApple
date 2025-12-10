@@ -41,4 +41,5 @@ export interface AppSettings {
   headerBackgroundColor: string; // Hex code for header background
   backgroundColor: string; // Hex code for app background
   logoUrl: string | null; // Base64 string
+  whatsappTemplate: string; // Custom message template
 }

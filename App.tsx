@@ -4,7 +4,15 @@ import { Inventory } from './components/Inventory';
 import { CalculatorComponent } from './components/Calculator';
 import { Configuration } from './components/Configuration';
 import { ProductItem, AppSettings } from './types';
-import { LayoutList, Calculator as CalcIcon, Settings, Package2 } from 'lucide-react';
+import { LayoutList, Calculator as CalcIcon, Settings, Package2, WifiOff, AlertTriangle, ExternalLink } from 'lucide-react';
+import { 
+  subscribeToInventory, 
+  addInventoryItem, 
+  updateInventoryItem,
+  deleteInventoryItem, 
+  subscribeToSettings, 
+  saveSettings 
+} from './services/firestoreService';
 
 // Helper to convert Hex to RGB array
 const hexToRgb = (hex: string): [number, number, number] => {
@@ -22,24 +30,89 @@ const mix = (color: [number, number, number], mixColor: [number, number, number]
   ];
 };
 
+const DEFAULT_SETTINGS: AppSettings = {
+  defaultFeeUsd: 0,
+  defaultSpread: 0.10,
+  defaultImportTax: 0,
+  installmentRules: Array.from({ length: 12 }, (_, i) => ({
+    installments: i + 1,
+    rate: i === 0 ? 0 : (i * 1.5)
+  })),
+  themeColor: '#38a878',
+  headerBackgroundColor: '#ffffff',
+  backgroundColor: '#f9fafb',
+  logoUrl: null,
+  whatsappTemplate: `Olá! Segue o orçamento:
+
+📱 *{produto}*
+💵 À vista: *{preco}*
+
+💳 Parcelamento:
+{parcelas}
+
+Entre em contato para fechar!`
+};
+
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'inventory' | 'calculator' | 'settings'>('inventory');
   const [items, setItems] = useState<ProductItem[]>([]);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   
-  const [settings, setSettings] = useState<AppSettings>({
-    defaultFeeUsd: 0,
-    defaultSpread: 0.10,
-    defaultImportTax: 0,
-    installmentRules: Array.from({ length: 12 }, (_, i) => ({
-      installments: i + 1,
-      rate: i === 0 ? 0 : (i * 1.5)
-    })),
-    themeColor: '#38a878',
-    headerBackgroundColor: '#ffffff',
-    backgroundColor: '#f9fafb', // Default gray-50
-    logoUrl: null
-  });
+  // Database Error States
+  const [dbError, setDbError] = useState<string | null>(null);
+  const [isPermissionError, setIsPermissionError] = useState(false);
 
+  // 1. Subscribe to Inventory Data from Firestore
+  useEffect(() => {
+    let unsubscribe: () => void;
+    
+    unsubscribe = subscribeToInventory(
+      (data) => {
+        setItems(data);
+        setDbError(null);
+        setIsPermissionError(false);
+      },
+      (error) => {
+        console.error("App Inventory Error:", error);
+        
+        if (error.code === 'permission-denied') {
+           setDbError("Permissão negada. O banco de dados não está acessível.");
+           setIsPermissionError(true);
+        } else if (error.message.includes("Cloud Firestore API has not been used")) {
+           setDbError("A API do Firestore não foi ativada no projeto.");
+           setIsPermissionError(true);
+        } else {
+           setDbError(`Erro de conexão: ${error.message}`);
+        }
+      }
+    );
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  // 2. Subscribe to Settings Data from Firestore
+  useEffect(() => {
+    let unsubscribe: () => void;
+    
+    unsubscribe = subscribeToSettings(
+      (data) => {
+        // Merge with defaults to ensure new fields (like whatsappTemplate) exist
+        setSettings(prev => ({ ...DEFAULT_SETTINGS, ...data }));
+      },
+      (error) => {
+          // Silent fail for settings or just log, as inventory error usually covers it
+          console.warn("Settings sync warning:", error.message);
+      }
+    );
+    
+    return () => {
+        if (unsubscribe) unsubscribe();
+    }
+  }, []);
+
+  // Update Theme CSS Variables
   useEffect(() => {
     const baseColor = hexToRgb(settings.themeColor);
     const white: [number, number, number] = [255, 255, 255];
@@ -63,22 +136,94 @@ const App: React.FC = () => {
       root.style.setProperty(`--color-apple-${key}`, value.join(' '));
     });
 
-    // Apply background color to body to ensure overscroll matches
     document.body.style.backgroundColor = settings.backgroundColor;
 
   }, [settings.themeColor, settings.backgroundColor]);
 
-  const handleAddItem = (item: ProductItem) => {
-    setItems(prev => [item, ...prev]);
+  const handleAddItem = async (item: ProductItem) => {
+    try {
+        await addInventoryItem(item);
+    } catch (error: any) {
+        alert("Erro ao salvar: " + error.message);
+    }
   };
 
-  const handleDeleteItem = (id: string) => {
-    setItems(prev => prev.filter(item => item.id !== id));
+  const handleUpdateItem = async (item: ProductItem) => {
+    try {
+        await updateInventoryItem(item);
+    } catch (error: any) {
+        alert("Erro ao atualizar: " + error.message);
+    }
   };
 
-  const handleSaveSettings = (newSettings: AppSettings) => {
+  const handleDeleteItem = async (id: string) => {
+    try {
+        await deleteInventoryItem(id);
+    } catch (error: any) {
+        alert("Erro ao deletar: " + error.message);
+    }
+  };
+
+  const handleSaveSettings = async (newSettings: AppSettings) => {
     setSettings(newSettings);
+    try {
+        await saveSettings(newSettings);
+    } catch (error: any) {
+        alert("Erro ao salvar configurações: " + error.message);
+    }
   };
+
+  if (isPermissionError) {
+      return (
+          <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-gray-50 text-center">
+              <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full border border-red-100">
+                  <div className="bg-red-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <AlertTriangle className="w-8 h-8 text-red-500" />
+                  </div>
+                  
+                  <h2 className="text-2xl font-bold text-gray-900 mb-3">Configuração Pendente</h2>
+                  
+                  <p className="text-gray-600 mb-6 leading-relaxed">
+                      O app está conectado ao Firebase, mas o <b>Banco de Dados (Firestore)</b> ainda não foi criado ou configurado corretamente.
+                  </p>
+
+                  <div className="text-left bg-gray-50 p-4 rounded-xl border border-gray-100 mb-6 space-y-3">
+                      <h3 className="font-semibold text-gray-800 text-sm uppercase tracking-wide">Como resolver:</h3>
+                      <ol className="list-decimal list-inside text-sm text-gray-600 space-y-2">
+                          <li>Acesse o <a href="https://console.firebase.google.com/" target="_blank" className="text-blue-600 hover:underline">Console do Firebase</a>.</li>
+                          <li>Clique no menu <b>Criação (Build)</b> &gt; <b>Firestore Database</b>.</li>
+                          <li>Clique em <b>Criar banco de dados</b>.</li>
+                          <li><span className="font-bold text-red-600">Importante:</span> Selecione <b>"Iniciar no modo de teste"</b> (Start in test mode) nas regras de segurança.</li>
+                          <li>Aguarde 1 minuto e recarregue esta página.</li>
+                      </ol>
+                  </div>
+
+                  <a 
+                    href="https://console.firebase.google.com/" 
+                    target="_blank" 
+                    rel="noreferrer"
+                    className="flex items-center justify-center gap-2 w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl hover:bg-blue-700 transition-colors"
+                  >
+                    Ir para o Console do Firebase
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+              </div>
+          </div>
+      );
+  }
+
+  if (dbError && !isPermissionError) {
+       return (
+          <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center bg-gray-50">
+              <WifiOff className="w-12 h-12 text-gray-400 mb-4" />
+              <h2 className="text-xl font-bold text-gray-900 mb-2">Erro de Conexão</h2>
+              <p className="text-gray-600 mb-6 max-w-md">{dbError}</p>
+              <button onClick={() => window.location.reload()} className="bg-gray-900 text-white px-6 py-2 rounded-lg">
+                 Tentar Novamente
+              </button>
+          </div>
+      );
+  }
 
   return (
     <div 
@@ -113,6 +258,7 @@ const App: React.FC = () => {
             items={items} 
             settings={settings}
             onAddItem={handleAddItem} 
+            onUpdateItem={handleUpdateItem}
             onDeleteItem={handleDeleteItem} 
           />
         )}

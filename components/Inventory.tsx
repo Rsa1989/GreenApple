@@ -2,17 +2,19 @@
 import React, { useState, useEffect } from 'react';
 import { ProductItem, AppSettings } from '../types';
 import { Input } from './Input';
-import { Plus, Trash2, Search, X, ChevronDown, ChevronUp, Package } from 'lucide-react';
+import { Plus, Trash2, Search, X, ChevronDown, ChevronUp, Package, Pencil } from 'lucide-react';
 
 interface InventoryProps {
   items: ProductItem[];
   settings: AppSettings;
   onAddItem: (item: ProductItem) => void;
+  onUpdateItem: (item: ProductItem) => void;
   onDeleteItem: (id: string) => void;
 }
 
-export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem, onDeleteItem }) => {
+export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem, onUpdateItem, onDeleteItem }) => {
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     memory: '',
@@ -26,15 +28,17 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
 
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Initialize defaults
+  // Initialize defaults only if not editing and not manually changed
   useEffect(() => {
-    setFormData(prev => ({
-      ...prev,
-      feeUsd: settings.defaultFeeUsd > 0 ? settings.defaultFeeUsd.toString() : prev.feeUsd,
-      spread: settings.defaultSpread > 0 ? settings.defaultSpread.toString() : prev.spread,
-      importTaxBrl: settings.defaultImportTax > 0 ? settings.defaultImportTax.toString() : prev.importTaxBrl,
-    }));
-  }, [settings]);
+    if (!editingId) {
+      setFormData(prev => ({
+        ...prev,
+        feeUsd: settings.defaultFeeUsd > 0 && !prev.feeUsd ? settings.defaultFeeUsd.toString() : prev.feeUsd,
+        spread: settings.defaultSpread > 0 && !prev.spread ? settings.defaultSpread.toString() : prev.spread,
+        importTaxBrl: settings.defaultImportTax > 0 && !prev.importTaxBrl ? settings.defaultImportTax.toString() : prev.importTaxBrl,
+      }));
+    }
+  }, [settings, editingId]);
 
   const calculateCost = () => {
     const costUsd = parseFloat(formData.costUsd) || 0;
@@ -52,28 +56,24 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
 
   const { totalBrl, effectiveRate } = calculateCost();
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const { totalBrl } = calculateCost();
+  const handleEditClick = (item: ProductItem) => {
+    setEditingId(item.id);
+    setFormData({
+      name: item.name,
+      memory: item.memory,
+      color: item.color,
+      costUsd: item.costUsd.toString(),
+      feeUsd: item.feeUsd.toString(),
+      exchangeRate: item.exchangeRate.toString(),
+      spread: item.spread.toString(),
+      importTaxBrl: item.importTaxBrl.toString(),
+    });
+    setIsFormOpen(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
-    const newItem: ProductItem = {
-      id: crypto.randomUUID(),
-      name: formData.name,
-      memory: formData.memory,
-      color: formData.color,
-      costUsd: parseFloat(formData.costUsd) || 0,
-      feeUsd: parseFloat(formData.feeUsd) || 0,
-      exchangeRate: parseFloat(formData.exchangeRate) || 0,
-      spread: parseFloat(formData.spread) || 0,
-      importTaxBrl: parseFloat(formData.importTaxBrl) || 0,
-      totalCostBrl: totalBrl,
-      createdAt: Date.now(),
-    };
-
-    onAddItem(newItem);
-    setIsFormOpen(false); // Close form on success
-    
-    // Reset form but keep default settings
+  const handleCancelEdit = () => {
+    setEditingId(null);
     setFormData({
       name: '', 
       memory: '', 
@@ -84,6 +84,35 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
       spread: settings.defaultSpread.toString(), 
       importTaxBrl: settings.defaultImportTax.toString()
     });
+    setIsFormOpen(false);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const { totalBrl } = calculateCost();
+
+    const itemData: ProductItem = {
+      id: editingId || crypto.randomUUID(), // Use existing ID if editing
+      name: formData.name,
+      memory: formData.memory,
+      color: formData.color,
+      costUsd: parseFloat(formData.costUsd) || 0,
+      feeUsd: parseFloat(formData.feeUsd) || 0,
+      exchangeRate: parseFloat(formData.exchangeRate) || 0,
+      spread: parseFloat(formData.spread) || 0,
+      importTaxBrl: parseFloat(formData.importTaxBrl) || 0,
+      totalCostBrl: totalBrl,
+      createdAt: editingId ? (items.find(i => i.id === editingId)?.createdAt || Date.now()) : Date.now(),
+    };
+
+    if (editingId) {
+      onUpdateItem(itemData);
+    } else {
+      onAddItem(itemData);
+    }
+
+    // Reset Form
+    handleCancelEdit();
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -116,21 +145,26 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
 
       {/* Add New Item Button (Collapsible Trigger) */}
       <button 
-        onClick={() => setIsFormOpen(!isFormOpen)}
-        className="w-full bg-apple-600 active:bg-apple-700 text-white p-4 rounded-2xl font-medium shadow-md shadow-apple-200 flex items-center justify-between transition-transform active:scale-[0.98]"
+        onClick={() => {
+            if (editingId) handleCancelEdit();
+            setIsFormOpen(!isFormOpen);
+        }}
+        className={`w-full text-white p-4 rounded-2xl font-medium shadow-md flex items-center justify-between transition-transform active:scale-[0.98] ${
+            editingId ? 'bg-amber-600 shadow-amber-200' : 'bg-apple-600 shadow-apple-200 active:bg-apple-700'
+        }`}
       >
         <div className="flex items-center gap-3">
             <div className="bg-white/20 p-1.5 rounded-lg">
-                <Plus className="w-5 h-5" />
+                {editingId ? <Pencil className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
             </div>
-            <span className="text-lg">Cadastrar Novo</span>
+            <span className="text-lg">{editingId ? "Editando Produto" : "Cadastrar Novo"}</span>
         </div>
         {isFormOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
       </button>
 
       {/* Form Section */}
       {isFormOpen && (
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 animate-fade-in">
+        <div className={`bg-white p-5 rounded-2xl shadow-sm border animate-fade-in ${editingId ? 'border-amber-200' : 'border-gray-100'}`}>
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="grid grid-cols-1 gap-4">
               <Input name="name" label="Nome do Produto" placeholder="Ex: iPhone 15" value={formData.name} onChange={handleChange} required />
@@ -156,15 +190,29 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
 
             <Input name="importTaxBrl" label="Taxa Importação (R$)" type="number" step="0.01" placeholder="0.00" value={formData.importTaxBrl} onChange={handleChange} required />
             
-            <div className="bg-apple-50 p-4 rounded-xl border border-apple-100 flex flex-col items-center text-center gap-2">
+            <div className={`p-4 rounded-xl border flex flex-col items-center text-center gap-2 ${editingId ? 'bg-amber-50 border-amber-100' : 'bg-apple-50 border-apple-100'}`}>
                <span className="text-xs text-gray-500 uppercase tracking-wide">Custo Final Estimado</span>
-               <span className="font-bold text-3xl text-apple-700">R$ {totalBrl.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+               <span className={`font-bold text-3xl ${editingId ? 'text-amber-700' : 'text-apple-700'}`}>R$ {totalBrl.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                <span className="text-xs text-gray-400">Taxa Efetiva: R$ {effectiveRate.toFixed(3)}</span>
             </div>
             
-            <button type="submit" className="w-full bg-gray-900 text-white py-4 rounded-xl font-medium text-lg shadow-lg active:scale-[0.98] transition-transform">
-               Confirmar Cadastro
-            </button>
+            <div className="flex gap-3">
+                {editingId && (
+                    <button 
+                        type="button" 
+                        onClick={handleCancelEdit}
+                        className="flex-1 bg-gray-100 text-gray-700 py-4 rounded-xl font-medium text-lg active:scale-[0.98] transition-transform"
+                    >
+                        Cancelar
+                    </button>
+                )}
+                <button 
+                    type="submit" 
+                    className={`flex-1 text-white py-4 rounded-xl font-medium text-lg shadow-lg active:scale-[0.98] transition-transform ${editingId ? 'bg-amber-600 hover:bg-amber-700' : 'bg-gray-900'}`}
+                >
+                    {editingId ? "Salvar Alterações" : "Confirmar Cadastro"}
+                </button>
+            </div>
           </form>
         </div>
       )}
@@ -178,7 +226,7 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
             </div>
         ) : (
             filteredItems.map(item => (
-                <div key={item.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-3 relative overflow-hidden">
+                <div key={item.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-3 relative overflow-hidden transition-all hover:shadow-md">
                     <div className="flex justify-between items-start">
                         <div>
                             <h3 className="font-bold text-gray-900 text-lg">{item.name}</h3>
@@ -186,12 +234,20 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
                                 {item.memory} • {item.color}
                             </span>
                         </div>
-                        <button 
-                            onClick={() => onDeleteItem(item.id)}
-                            className="bg-red-50 text-red-500 p-2 rounded-lg hover:bg-red-100 transition-colors"
-                        >
-                            <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex gap-2">
+                            <button 
+                                onClick={() => handleEditClick(item)}
+                                className="bg-gray-50 text-gray-500 p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                            >
+                                <Pencil className="w-4 h-4" />
+                            </button>
+                            <button 
+                                onClick={() => onDeleteItem(item.id)}
+                                className="bg-red-50 text-red-500 p-2 rounded-lg hover:bg-red-100 transition-colors"
+                            >
+                                <Trash2 className="w-4 h-4" />
+                            </button>
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4 mt-2 border-t border-gray-50 pt-3">
