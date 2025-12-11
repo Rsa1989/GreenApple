@@ -1,7 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppSettings } from '../types';
-import { Package2, ArrowRight, Lock } from 'lucide-react';
+import { Package2, ArrowRight, Lock, Beaker } from 'lucide-react';
+import { toggleTestMode, getTestModeStatus } from '../services/firestoreService';
 
 interface LoginProps {
   settings: AppSettings;
@@ -11,6 +12,11 @@ interface LoginProps {
 export const Login: React.FC<LoginProps> = ({ settings, onLogin }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(false);
+  const [isTester, setIsTester] = useState(false);
+
+  useEffect(() => {
+      setIsTester(getTestModeStatus());
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,6 +28,12 @@ export const Login: React.FC<LoginProps> = ({ settings, onLogin }) => {
     }
   };
 
+  const handleToggleTester = () => {
+      const newState = !isTester;
+      setIsTester(newState);
+      toggleTestMode(newState);
+  };
+
   return (
     <div 
       className="min-h-screen flex flex-col items-center justify-center p-6 animate-fade-in transition-colors duration-300"
@@ -31,7 +43,7 @@ export const Login: React.FC<LoginProps> = ({ settings, onLogin }) => {
         
         {/* Header Branding */}
         <div 
-           className="py-10 flex flex-col items-center justify-center gap-4 transition-colors duration-300"
+           className="py-10 flex flex-col items-center justify-center gap-4 transition-colors duration-300 relative"
            style={{ backgroundColor: settings.headerBackgroundColor }}
         >
             {settings.logoUrl ? (
@@ -42,6 +54,12 @@ export const Login: React.FC<LoginProps> = ({ settings, onLogin }) => {
                 </div>
             )}
             <h1 className="text-2xl font-bold text-apple-700 tracking-tight">Bem-vindo</h1>
+            
+            {isTester && (
+                <div className="absolute top-4 right-4 bg-orange-100 text-orange-600 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider border border-orange-200">
+                    Test Mode
+                </div>
+            )}
         </div>
 
         <div className="p-8">
@@ -78,6 +96,21 @@ export const Login: React.FC<LoginProps> = ({ settings, onLogin }) => {
                     Entrar
                     <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </button>
+
+                <div className="pt-4 border-t border-gray-100 flex justify-center">
+                    <button
+                        type="button"
+                        onClick={handleToggleTester}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium transition-all ${
+                            isTester 
+                            ? 'bg-orange-50 text-orange-600 border border-orange-200' 
+                            : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
+                        }`}
+                    >
+                        <Beaker className="w-3.5 h-3.5" />
+                        {isTester ? "Modo Tester Ativo (Dados Isolados)" : "Ativar Modo Tester"}
+                    </button>
+                </div>
             </form>
         </div>
       </div>

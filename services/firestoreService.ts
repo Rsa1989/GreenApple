@@ -18,13 +18,44 @@ import {
 } from "firebase/firestore";
 import { ProductItem, AppSettings, SimulationItem, Transaction } from "../types";
 
+// --- TESTER MODE LOGIC ---
+
+const TEST_MODE_KEY = 'greenapple_test_mode';
+let isTestMode = localStorage.getItem(TEST_MODE_KEY) === 'true';
+
+// Simple event emitter to notify App when mode changes without reloading
+let modeChangeListeners: Array<(isTest: boolean) => void> = [];
+
+export const onTestModeChange = (listener: (isTest: boolean) => void) => {
+    modeChangeListeners.push(listener);
+    return () => {
+        modeChangeListeners = modeChangeListeners.filter(l => l !== listener);
+    };
+};
+
+export const toggleTestMode = (enable: boolean) => {
+    isTestMode = enable;
+    localStorage.setItem(TEST_MODE_KEY, String(enable));
+    
+    // Notify all listeners (App.tsx) to re-render and re-subscribe
+    modeChangeListeners.forEach(listener => listener(enable));
+};
+
+export const getTestModeStatus = () => isTestMode;
+
+// Helper to route to correct collection based on mode
+const getCollectionName = (baseName: string) => {
+    return isTestMode ? `test_${baseName}` : baseName;
+};
+
 // --- INVENTORY OPERATIONS ---
 
 export const subscribeToInventory = (
   onData: (items: ProductItem[]) => void,
   onError: (error: FirestoreError) => void
 ) => {
-  const q = query(collection(db, "products"), orderBy("createdAt", "desc"));
+  const colName = getCollectionName("products");
+  const q = query(collection(db, colName), orderBy("createdAt", "desc"));
   
   return onSnapshot(q, {
     next: (snapshot) => {
@@ -46,11 +77,11 @@ export const addInventoryItem = async (item: ProductItem, customDescription?: st
     const batch = writeBatch(db);
     
     // 1. Add Product
-    const itemRef = doc(db, "products", item.id);
+    const itemRef = doc(db, getCollectionName("products"), item.id);
     batch.set(itemRef, item);
 
     // 2. Add Transaction (Expense)
-    const transactionRef = doc(collection(db, "transactions"));
+    const transactionRef = doc(collection(db, getCollectionName("transactions")));
     const transaction: Transaction = {
         id: transactionRef.id,
         type: 'STOCK_ENTRY',
@@ -70,7 +101,7 @@ export const addInventoryItem = async (item: ProductItem, customDescription?: st
 
 export const updateInventoryItem = async (item: ProductItem) => {
   try {
-    const itemRef = doc(db, "products", item.id);
+    const itemRef = doc(db, getCollectionName("products"), item.id);
     await setDoc(itemRef, item, { merge: true });
   } catch (error) {
     console.error("Erro ao atualizar item:", error);
@@ -80,7 +111,7 @@ export const updateInventoryItem = async (item: ProductItem) => {
 
 export const deleteInventoryItem = async (id: string) => {
   try {
-    await deleteDoc(doc(db, "products", id));
+    await deleteDoc(doc(db, getCollectionName("products"), id));
   } catch (error) {
     console.error("Erro ao deletar item:", error);
     throw error;
@@ -93,7 +124,7 @@ export const subscribeToSimulations = (
   onData: (items: SimulationItem[]) => void,
   onError: (error: FirestoreError) => void
 ) => {
-  const q = query(collection(db, "simulations"), orderBy("createdAt", "desc"));
+  const q = query(collection(db, getCollectionName("simulations")), orderBy("createdAt", "desc"));
   
   return onSnapshot(q, {
     next: (snapshot) => {
@@ -114,7 +145,7 @@ export const addSimulation = async (simulation: SimulationItem) => {
   try {
     // Remove undefined fields to prevent Firestore errors
     const cleanSimulation = JSON.parse(JSON.stringify(simulation));
-    await addDoc(collection(db, "simulations"), cleanSimulation);
+    await addDoc(collection(db, getCollectionName("simulations")), cleanSimulation);
   } catch (error) {
     console.error("Erro ao salvar simulação:", error);
     throw error;
@@ -124,7 +155,7 @@ export const addSimulation = async (simulation: SimulationItem) => {
 export const updateSimulation = async (simulation: SimulationItem) => {
   try {
     if (!simulation.id) throw new Error("ID needed for update");
-    const itemRef = doc(db, "simulations", simulation.id);
+    const itemRef = doc(db, getCollectionName("simulations"), simulation.id);
     // Remove the ID from the data payload so we don't duplicate it inside the doc
     const { id, ...data } = simulation;
     // Remove undefined fields
@@ -138,7 +169,7 @@ export const updateSimulation = async (simulation: SimulationItem) => {
 
 export const deleteSimulation = async (id: string) => {
   try {
-    await deleteDoc(doc(db, "simulations", id));
+    await deleteDoc(doc(db, getCollectionName("simulations"), id));
   } catch (error) {
     console.error("Erro ao deletar simulação:", error);
     throw error;
@@ -151,7 +182,7 @@ export const registerSale = async (simulation: SimulationItem) => {
 
         // 1. Update Simulation Status to 'sold'
         if (simulation.id) {
-            const simRef = doc(db, "simulations", simulation.id);
+            const simRef = doc(db, getCollectionName("simulations"), simulation.id);
             batch.update(simRef, { status: 'sold', soldAt: Date.now() });
         }
 
@@ -162,7 +193,7 @@ export const registerSale = async (simulation: SimulationItem) => {
             simulation.productId && 
             (simulation.mode === 'FROM_STOCK' || simulation.mode === 'FROM_USED_STOCK')
         ) {
-            const prodRef = doc(db, "products", simulation.productId);
+            const prodRef = doc(db, getCollectionName("products"), simulation.productId);
             batch.delete(prodRef);
         }
         
@@ -175,7 +206,7 @@ export const registerSale = async (simulation: SimulationItem) => {
             const searchName = simulation.productNameOnly || simulation.productName;
             
             // Query products with matching name
-            const q = query(collection(db, "products"), where("name", "==", searchName));
+            const q = query(collection(db, getCollectionName("products")), where("name", "==", searchName));
             const querySnapshot = await getDocs(q);
 
             // Iterate to find the specific one reserved for this customer
@@ -204,7 +235,7 @@ export const registerSale = async (simulation: SimulationItem) => {
 
         // 3. Create Transaction (Revenue)
         // Note: The amount recorded is the Net amount paid by customer
-        const transactionRef = doc(collection(db, "transactions"));
+        const transactionRef = doc(collection(db, getCollectionName("transactions")));
         const transaction: Transaction = {
             id: transactionRef.id,
             type: 'SALE',
@@ -219,7 +250,7 @@ export const registerSale = async (simulation: SimulationItem) => {
 
         // 4. Handle Trade-In (Create new Used Product)
         if (simulation.tradeInName && simulation.tradeInValue && simulation.tradeInValue > 0) {
-            const newProductRef = doc(collection(db, "products"));
+            const newProductRef = doc(collection(db, getCollectionName("products")));
             
             // Construct object carefully to avoid undefined values
             const tradeInItem: ProductItem = {
@@ -246,7 +277,7 @@ export const registerSale = async (simulation: SimulationItem) => {
 
             // 5. Create Transaction for Trade-In (Asset Entry)
             // User requested this to appear as POSITIVE (Green) in the report (as Asset Gain), but logicaly it is Stock Investment.
-            const tradeInTransRef = doc(collection(db, "transactions"));
+            const tradeInTransRef = doc(collection(db, getCollectionName("transactions")));
             const tradeInTransaction: Transaction = {
                 id: tradeInTransRef.id,
                 type: 'TRADE_IN_ENTRY', // Custom type to render as positive asset entry
@@ -272,7 +303,7 @@ export const subscribeToTransactions = (
   onData: (items: Transaction[]) => void,
   onError: (error: FirestoreError) => void
 ) => {
-  const q = query(collection(db, "transactions"), orderBy("date", "desc"));
+  const q = query(collection(db, getCollectionName("transactions")), orderBy("date", "desc"));
   
   return onSnapshot(q, {
     next: (snapshot) => {
@@ -291,7 +322,7 @@ export const subscribeToTransactions = (
 
 export const deleteTransaction = async (id: string) => {
   try {
-    await deleteDoc(doc(db, "transactions", id));
+    await deleteDoc(doc(db, getCollectionName("transactions"), id));
   } catch (error) {
     console.error("Erro ao deletar transação:", error);
     throw error;
@@ -300,7 +331,7 @@ export const deleteTransaction = async (id: string) => {
 
 export const clearTransactions = async () => {
   try {
-    const q = query(collection(db, "transactions"));
+    const q = query(collection(db, getCollectionName("transactions")));
     const snapshot = await getDocs(q);
     
     const batch = writeBatch(db);
@@ -322,7 +353,7 @@ const SETTINGS_DOC_ID = "global_settings";
 
 export const saveSettings = async (settings: AppSettings) => {
   try {
-    await setDoc(doc(db, "settings", SETTINGS_DOC_ID), settings);
+    await setDoc(doc(db, getCollectionName("settings"), SETTINGS_DOC_ID), settings);
   } catch (error) {
     console.error("Erro ao salvar configurações:", error);
     throw error;
@@ -331,7 +362,7 @@ export const saveSettings = async (settings: AppSettings) => {
 
 export const fetchSettings = async (): Promise<AppSettings | null> => {
   try {
-    const docRef = doc(db, "settings", SETTINGS_DOC_ID);
+    const docRef = doc(db, getCollectionName("settings"), SETTINGS_DOC_ID);
     const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
@@ -349,7 +380,7 @@ export const subscribeToSettings = (
   onData: (settings: AppSettings) => void,
   onError?: (error: FirestoreError) => void
 ) => {
-    return onSnapshot(doc(db, "settings", SETTINGS_DOC_ID), {
+    return onSnapshot(doc(db, getCollectionName("settings"), SETTINGS_DOC_ID), {
       next: (doc) => {
         if (doc.exists()) {
             onData(doc.data() as AppSettings);

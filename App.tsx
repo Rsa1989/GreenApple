@@ -6,7 +6,7 @@ import { SimulationHistory } from './components/SimulationHistory';
 import { Reports } from './components/Reports';
 import { Login } from './components/Login';
 import { ProductItem, AppSettings, SimulationItem, Transaction } from './types';
-import { LayoutList, Calculator as CalcIcon, Settings, Package2, WifiOff, AlertTriangle, ExternalLink, History, TrendingUp } from 'lucide-react';
+import { LayoutList, Calculator as CalcIcon, Settings, Package2, WifiOff, AlertTriangle, ExternalLink, History, TrendingUp, Beaker, LogOut } from 'lucide-react';
 import { 
   subscribeToInventory, 
   addInventoryItem, 
@@ -21,7 +21,9 @@ import {
   registerSale,
   subscribeToTransactions,
   clearTransactions,
-  deleteTransaction
+  deleteTransaction,
+  getTestModeStatus,
+  onTestModeChange
 } from './services/firestoreService';
 
 // Helper to convert Hex to RGB array
@@ -86,6 +88,7 @@ const App: React.FC = () => {
   const [simulations, setSimulations] = useState<SimulationItem[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [isTestMode, setIsTestMode] = useState(false);
   
   // State for editing simulation
   const [simulationToEdit, setSimulationToEdit] = useState<SimulationItem | null>(null);
@@ -97,17 +100,27 @@ const App: React.FC = () => {
   const [dbError, setDbError] = useState<string | null>(null);
   const [isPermissionError, setIsPermissionError] = useState(false);
 
-  // Check Session Storage for Auth (SessionStorage clears when tab/browser closes)
+  // Initialize and Subscribe to Test Mode Changes
   useEffect(() => {
-    const auth = sessionStorage.getItem('greenapple_auth');
-    if (auth === 'true') {
-      setIsAuthenticated(true);
-    }
+    // Initial State
+    setIsTestMode(getTestModeStatus());
+    
+    // Subscribe
+    const unsubscribe = onTestModeChange((newMode) => {
+        setIsTestMode(newMode);
+    });
+
+    return unsubscribe;
   }, []);
 
   const handleLogin = () => {
     setIsAuthenticated(true);
-    sessionStorage.setItem('greenapple_auth', 'true');
+    // Session storage persistence removed to ensure login screen on refresh
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setActiveTab('inventory'); // Reset tab on logout
   };
 
   // 1. Subscribe to Inventory Data
@@ -140,7 +153,7 @@ const App: React.FC = () => {
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isTestMode]); // Dependencies updated to restart sub on mode change
 
   // 2. Subscribe to Settings Data
   useEffect(() => {
@@ -174,7 +187,7 @@ const App: React.FC = () => {
     return () => {
         if (unsubscribe) unsubscribe();
     }
-  }, []);
+  }, [isTestMode]); // Update settings when mode changes
 
   // 3. Subscribe to Simulations Data
   useEffect(() => {
@@ -194,7 +207,7 @@ const App: React.FC = () => {
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isTestMode]);
 
   // 4. Subscribe to Transactions Data
   useEffect(() => {
@@ -214,7 +227,7 @@ const App: React.FC = () => {
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isTestMode]);
 
 
   // Update Theme CSS Variables
@@ -424,6 +437,12 @@ const App: React.FC = () => {
         className="border-b border-gray-200 sticky top-0 z-30 transition-all duration-300 shadow-sm"
         style={{ backgroundColor: settings.headerBackgroundColor }}
       >
+        {isTestMode && (
+             <div className="bg-orange-500 text-white text-[10px] font-bold text-center py-1 uppercase tracking-widest flex items-center justify-center gap-1">
+                 <Beaker className="w-3 h-3" />
+                 Modo Tester Ativo - Dados Isolados
+             </div>
+        )}
         <div className="max-w-3xl mx-auto px-4 py-3 min-h-[80px] flex items-center justify-center relative">
             <div className="flex items-center gap-2">
                {settings.logoUrl ? (
@@ -437,6 +456,15 @@ const App: React.FC = () => {
                   </div>
                )}
             </div>
+
+            {/* Logout Button */}
+            <button
+                onClick={handleLogout}
+                className="absolute right-4 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                title="Sair"
+            >
+                <LogOut className="w-5 h-5" />
+            </button>
         </div>
       </header>
 
