@@ -69,6 +69,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   headerBackgroundColor: '#ffffff',
   backgroundColor: '#f9fafb',
   logoUrl: null,
+  appIconUrl: null,
   whatsappTemplate: `Olá, segue o orçamento conforme solicitado:
 
 📱 *{produto}*
@@ -239,7 +240,7 @@ const App: React.FC = () => {
   }, [isAuthenticated, isTestMode]);
 
 
-  // Update Theme CSS Variables
+  // Update Theme CSS Variables and Head Meta Tags (Icon, Color)
   useEffect(() => {
     const baseColor = hexToRgb(settings.themeColor);
     const white: [number, number, number] = [255, 255, 255];
@@ -267,7 +268,44 @@ const App: React.FC = () => {
         document.body.style.backgroundColor = settings.backgroundColor;
     }
 
-  }, [settings.themeColor, settings.backgroundColor]);
+    // Update Meta Theme Color
+    let metaThemeColor = document.querySelector("meta[name='theme-color']");
+    if (!metaThemeColor) {
+        metaThemeColor = document.createElement('meta');
+        metaThemeColor.setAttribute('name', 'theme-color');
+        document.head.appendChild(metaThemeColor);
+    }
+    metaThemeColor.setAttribute('content', settings.headerBackgroundColor);
+
+    // Update Favicon and Apple Touch Icon
+    const updateIcon = (url: string) => {
+        // Standard Icon
+        let linkIcon = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
+        if (!linkIcon) {
+            linkIcon = document.createElement('link');
+            linkIcon.rel = 'icon';
+            document.head.appendChild(linkIcon);
+        }
+        linkIcon.href = url;
+
+        // Apple Icon
+        let appleIcon = document.querySelector("link[rel='apple-touch-icon']") as HTMLLinkElement;
+        if (!appleIcon) {
+            appleIcon = document.createElement('link');
+            appleIcon.rel = 'apple-touch-icon';
+            document.head.appendChild(appleIcon);
+        }
+        appleIcon.href = url;
+    };
+
+    if (settings.appIconUrl) {
+        updateIcon(settings.appIconUrl);
+    } else if (settings.logoUrl) {
+        // Fallback to Logo if no specific icon
+        updateIcon(settings.logoUrl);
+    }
+
+  }, [settings.themeColor, settings.backgroundColor, settings.headerBackgroundColor, settings.appIconUrl, settings.logoUrl]);
 
   const handleAddItem = async (item: ProductItem, customDescription?: string) => {
     try {

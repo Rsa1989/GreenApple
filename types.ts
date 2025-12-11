@@ -89,6 +89,7 @@ export interface AppSettings {
   headerBackgroundColor: string; // Hex code for header background
   backgroundColor: string; // Hex code for app background
   logoUrl: string | null; // Base64 string
+  appIconUrl: string | null; // Base64 string for Favicon/Apple Icon
   whatsappTemplate: string; // Custom message template
   
   // Customizable WhatsApp Labels

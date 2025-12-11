@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AppSettings } from '../types';
 import { Input } from './Input';
-import { Save, ChevronRight, Upload, Trash2, MessageCircle, Lock, Eye, EyeOff } from 'lucide-react';
+import { Save, ChevronRight, Upload, Trash2, MessageCircle, Lock, Eye, EyeOff, Smartphone } from 'lucide-react';
 
 interface ConfigurationProps {
   settings: AppSettings;
@@ -66,8 +66,26 @@ export const Configuration: React.FC<ConfigurationProps> = ({ settings, onSave }
     }
   };
 
+  const handleAppIconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setLocalSettings(prev => ({
+          ...prev,
+          appIconUrl: reader.result as string
+        }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const removeLogo = () => {
     setLocalSettings(prev => ({ ...prev, logoUrl: null }));
+  };
+
+  const removeAppIcon = () => {
+    setLocalSettings(prev => ({ ...prev, appIconUrl: null }));
   };
 
   const handleInstallmentChange = (index: number, value: string) => {
@@ -183,7 +201,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({ settings, onSave }
                 </div>
                 
                 {/* Logo */}
-                <div className="p-4 flex items-center justify-between">
+                <div className="p-4 flex items-center justify-between border-b border-gray-100">
                    <div className="flex items-center gap-3">
                       <div className="w-12 h-12 bg-gray-50 rounded-lg flex items-center justify-center border border-gray-100 overflow-hidden relative">
                           {localSettings.logoUrl ? (
@@ -194,7 +212,7 @@ export const Configuration: React.FC<ConfigurationProps> = ({ settings, onSave }
                       </div>
                       <div className="flex flex-col">
                          <span className="text-gray-900 font-medium">Logotipo</span>
-                         <span className="text-xs text-gray-400">PNG ou JPG</span>
+                         <span className="text-xs text-gray-400">Topo do App</span>
                       </div>
                    </div>
                    <div className="flex items-center gap-2">
@@ -204,6 +222,34 @@ export const Configuration: React.FC<ConfigurationProps> = ({ settings, onSave }
                       </label>
                       {localSettings.logoUrl && (
                         <button type="button" onClick={removeLogo} className="p-2 text-red-500 bg-red-50 rounded-lg">
+                           <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                   </div>
+                </div>
+
+                {/* App Icon (Add to Home Screen) */}
+                <div className="p-4 flex items-center justify-between">
+                   <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 bg-gray-50 rounded-xl flex items-center justify-center border border-gray-100 overflow-hidden relative shadow-sm">
+                          {localSettings.appIconUrl ? (
+                            <img src={localSettings.appIconUrl} className="w-full h-full object-cover" />
+                          ) : (
+                            <Smartphone className="w-5 h-5 text-gray-400" />
+                          )}
+                      </div>
+                      <div className="flex flex-col">
+                         <span className="text-gray-900 font-medium">Ícone do App</span>
+                         <span className="text-xs text-gray-400">Home Screen (iOS/And)</span>
+                      </div>
+                   </div>
+                   <div className="flex items-center gap-2">
+                      <label className="text-apple-600 font-medium text-sm px-3 py-1.5 bg-apple-50 rounded-lg cursor-pointer">
+                        Alterar
+                        <input type="file" accept="image/*" onChange={handleAppIconUpload} className="hidden" />
+                      </label>
+                      {localSettings.appIconUrl && (
+                        <button type="button" onClick={removeAppIcon} className="p-2 text-red-500 bg-red-50 rounded-lg">
                            <Trash2 className="w-4 h-4" />
                         </button>
                       )}
