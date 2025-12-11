@@ -10,12 +10,28 @@
     <meta name="apple-mobile-web-app-title" content="GreenApple">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#ffffff">
+    
     <link rel="manifest" href="/manifest.json">
-    <link rel="apple-touch-icon" href="/icon.png"> 
-    <link rel="icon" type="image/png" href="/icon.png">
+    
+    <!-- Default Icons (Fallback if dynamic icon fails or before React loads) -->
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/415/415733.png"> 
+    <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/415/415733.png">
 
     <title>GreenApple - Gestão de Estoque</title>
-    <!-- Tailwind via CDN for simplicity in this setup -->
+    
+    <!-- Capture PWA Install Prompt Immediately -->
+    <script>
+      window.deferredPrompt = null;
+      window.addEventListener('beforeinstallprompt', (e) => {
+        // Prevent the mini-infobar from appearing on mobile
+        e.preventDefault();
+        // Stash the event so it can be triggered later.
+        window.deferredPrompt = e;
+        console.log("Install prompt captured in index.html");
+      });
+    </script>
+
+    <!-- Tailwind via CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {

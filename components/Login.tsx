@@ -8,13 +8,20 @@ interface LoginProps {
   onLogin: () => void;
 }
 
+// Declare the global window property
+declare global {
+  interface Window {
+    deferredPrompt: any;
+  }
+}
+
 export const Login: React.FC<LoginProps> = ({ settings, onLogin }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(false);
   const [isTester, setIsTester] = useState(false);
   
   // PWA State
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [canInstall, setCanInstall] = useState(false);
   const [isIos, setIsIos] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const [showIosInstructions, setShowIosInstructions] = useState(false);
@@ -32,10 +39,16 @@ export const Login: React.FC<LoginProps> = ({ settings, onLogin }) => {
       const isIosDevice = /iphone|ipad|ipod/.test(userAgent);
       setIsIos(isIosDevice);
 
-      // 3. Capture Android/Chrome install prompt
+      // 3. Check for the global prompt we captured in index.html
+      if (window.deferredPrompt) {
+          setCanInstall(true);
+      }
+
+      // 4. Also listen in case it fires late
       const handleBeforeInstallPrompt = (e: Event) => {
           e.preventDefault();
-          setDeferredPrompt(e);
+          window.deferredPrompt = e;
+          setCanInstall(true);
       };
 
       window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -64,20 +77,21 @@ export const Login: React.FC<LoginProps> = ({ settings, onLogin }) => {
   const handleInstallClick = async () => {
       if (isIos) {
           setShowIosInstructions(true);
-      } else if (deferredPrompt) {
-          deferredPrompt.prompt();
-          const { outcome } = await deferredPrompt.userChoice;
+      } else if (window.deferredPrompt) {
+          window.deferredPrompt.prompt();
+          const { outcome } = await window.deferredPrompt.userChoice;
           if (outcome === 'accepted') {
-              setDeferredPrompt(null);
+              window.deferredPrompt = null;
+              setCanInstall(false);
           }
       } else {
-          // Fallback if browser doesn't support automatic prompt but isn't iOS (e.g. standard desktop browser)
-          alert("Para instalar, use a opção 'Adicionar à Tela Inicial' ou 'Instalar App' no menu do seu navegador.");
+          // Fallback logic
+          alert("Para instalar, procure a opção 'Adicionar à Tela Inicial' ou 'Instalar Aplicativo' no menu do seu navegador.");
       }
   };
 
   // Only show button if NOT installed AND (We have an Android prompt OR it is iOS)
-  const showInstallButton = !isStandalone && (deferredPrompt || isIos);
+  const showInstallButton = !isStandalone && (canInstall || isIos);
 
   return (
     <div 
@@ -148,10 +162,10 @@ export const Login: React.FC<LoginProps> = ({ settings, onLogin }) => {
                         <button
                             type="button"
                             onClick={handleInstallClick}
-                            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-bold transition-all bg-apple-50 text-apple-700 hover:bg-apple-100 border border-apple-100"
+                            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-bold transition-all bg-apple-50 text-apple-700 hover:bg-apple-100 border border-apple-100 shadow-sm"
                         >
                             <Download className="w-4 h-4" />
-                            Baixar Aplicativo
+                            {isIos ? "Instalar no iPhone" : "Instalar Aplicativo"}
                         </button>
                      )}
 
