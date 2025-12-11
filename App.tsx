@@ -320,12 +320,14 @@ const App: React.FC = () => {
           {
             src: settings.appIconUrl, // User uploaded Base64 image
             sizes: "192x192",
-            type: "image/png"
+            type: "image/png",
+            purpose: "any maskable" // KEY FIX: Forces Android to remove white border
           },
           {
             src: settings.appIconUrl, // User uploaded Base64 image
             sizes: "512x512",
-            type: "image/png"
+            type: "image/png",
+            purpose: "any maskable" // KEY FIX: Forces Android to remove white border
           }
         ]
       };
