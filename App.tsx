@@ -20,7 +20,8 @@ import {
   deleteSimulation,
   registerSale,
   subscribeToTransactions,
-  clearTransactions
+  clearTransactions,
+  deleteTransaction
 } from './services/firestoreService';
 
 // Helper to convert Hex to RGB array
@@ -320,6 +321,14 @@ const App: React.FC = () => {
           alert("Erro ao limpar relatórios: " + error.message);
       }
   };
+
+  const handleDeleteTransactionRow = async (id: string) => {
+    try {
+        await deleteTransaction(id);
+    } catch (error: any) {
+        alert("Erro ao excluir transação: " + error.message);
+    }
+  };
   
   const handleEditSimulation = (simulation: SimulationItem) => {
       setSimulationToEdit(simulation);
@@ -470,6 +479,7 @@ const App: React.FC = () => {
           <Reports 
             transactions={transactions}
             onClear={handleClearReports}
+            onDeleteTransaction={handleDeleteTransactionRow}
           />
         )}
 

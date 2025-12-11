@@ -289,6 +289,15 @@ export const subscribeToTransactions = (
   });
 };
 
+export const deleteTransaction = async (id: string) => {
+  try {
+    await deleteDoc(doc(db, "transactions", id));
+  } catch (error) {
+    console.error("Erro ao deletar transação:", error);
+    throw error;
+  }
+};
+
 export const clearTransactions = async () => {
   try {
     const q = query(collection(db, "transactions"));

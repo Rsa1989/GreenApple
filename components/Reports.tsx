@@ -1,16 +1,21 @@
 
 import React, { useState } from 'react';
 import { Transaction } from '../types';
-import { TrendingUp, DollarSign, Calendar, ArrowUpRight, ArrowDownLeft, Package, Wallet, Trash2, Loader2, BarChart3 } from 'lucide-react';
+import { TrendingUp, DollarSign, Calendar, ArrowUpRight, ArrowDownLeft, Package, Wallet, Trash2, Loader2, BarChart3, AlertCircle } from 'lucide-react';
 
 interface ReportsProps {
   transactions: Transaction[];
   onClear: () => Promise<void> | void;
+  onDeleteTransaction: (id: string) => Promise<void> | void;
 }
 
-export const Reports: React.FC<ReportsProps> = ({ transactions, onClear }) => {
+export const Reports: React.FC<ReportsProps> = ({ transactions, onClear, onDeleteTransaction }) => {
   const [isClearing, setIsClearing] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  
+  // State for individual row deletion
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   
   // 1. CASH IN (Entrada de Caixa) = Sales amount (Net cash received)
   const cashIn = transactions
@@ -70,6 +75,33 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, onClear }) => {
       }
   };
 
+  const handleDeleteClick = (id: string) => {
+    if (confirmingDeleteId === id) {
+        // User clicked twice, execute delete
+        handleExecuteDelete(id);
+    } else {
+        // First click, show confirmation
+        setConfirmingDeleteId(id);
+        // Reset after 3 seconds if not confirmed
+        setTimeout(() => {
+            setConfirmingDeleteId(prev => prev === id ? null : prev);
+        }, 3000);
+    }
+  };
+
+  const handleExecuteDelete = async (id: string) => {
+    setDeletingId(id);
+    setConfirmingDeleteId(null);
+    try {
+        await onDeleteTransaction(id);
+    } catch (error) {
+        alert("Erro ao excluir movimentação. Verifique sua conexão.");
+        console.error(error);
+    } finally {
+        setDeletingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6 pb-20 animate-fade-in">
       <div className="flex items-center justify-between mb-4">
@@ -96,7 +128,7 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, onClear }) => {
                  ) : (
                      <>
                         <Trash2 className="w-3.5 h-3.5" />
-                        Limpar
+                        Limpar Tudo
                      </>
                  )}
               </button>
@@ -173,6 +205,9 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, onClear }) => {
                      const isTradeIn = t.type === 'TRADE_IN_ENTRY';
                      const isStockEntry = t.type === 'STOCK_ENTRY';
                      
+                     const isDeletingThis = deletingId === t.id;
+                     const isConfirming = confirmingDeleteId === t.id;
+                     
                      // Colors and Icons
                      let icon = <Package className="w-5 h-5" />;
                      let bgColor = 'bg-gray-100';
@@ -205,7 +240,7 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, onClear }) => {
                      const itemProfit = isSale ? (t.amount - (t.cost || 0)) : 0;
                      
                      return (
-                         <div key={t.id} className="p-4 border-b border-gray-50 last:border-none flex items-center justify-between hover:bg-gray-50 transition-colors">
+                         <div key={t.id} className="p-4 border-b border-gray-50 last:border-none flex items-center justify-between hover:bg-gray-50 transition-colors group">
                             <div className="flex items-center gap-3 overflow-hidden">
                                 <div className={`p-2 rounded-xl flex-shrink-0 ${bgColor} ${textColor}`}>
                                     {icon}
@@ -233,15 +268,36 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, onClear }) => {
                                     )}
                                 </div>
                             </div>
-                            <div className="flex-shrink-0 ml-3 text-right">
-                                <span className={`font-bold text-sm whitespace-nowrap ${amountColor}`}>
-                                    {sign} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                </span>
-                                {isSale && t.cost && (
-                                    <div className="text-[10px] text-gray-400 mt-0.5">
-                                        Custo: R$ {t.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                    </div>
-                                )}
+                            <div className="flex items-center gap-3">
+                                <div className="flex-shrink-0 text-right">
+                                    <span className={`font-bold text-sm whitespace-nowrap ${amountColor}`}>
+                                        {sign} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </span>
+                                    {isSale && t.cost && (
+                                        <div className="text-[10px] text-gray-400 mt-0.5">
+                                            Custo: R$ {t.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </div>
+                                    )}
+                                </div>
+                                <button 
+                                    onClick={() => handleDeleteClick(t.id)}
+                                    disabled={isDeletingThis}
+                                    className={`
+                                        p-2 rounded-lg transition-all text-xs font-bold
+                                        ${isConfirming 
+                                            ? 'bg-red-600 text-white w-20' 
+                                            : 'text-gray-300 hover:text-red-500 hover:bg-red-50'}
+                                    `}
+                                    title="Excluir registro"
+                                >
+                                    {isDeletingThis ? (
+                                        <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                                    ) : isConfirming ? (
+                                        "Confirmar?"
+                                    ) : (
+                                        <Trash2 className="w-4 h-4" />
+                                    )}
+                                </button>
                             </div>
                          </div>
                      );
