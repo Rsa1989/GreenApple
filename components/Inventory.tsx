@@ -118,15 +118,22 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
   const handleFetchRate = async () => {
     setLoadingRate(true);
     setRateSource(null);
-    const result = await fetchCurrentExchangeRate();
-    if (result) {
-      setFormData(prev => ({
-          ...prev,
-          exchangeRate: result.rate.toString()
-      }));
-      setRateSource(result.source || "Google Search");
+    try {
+        const result = await fetchCurrentExchangeRate();
+        if (result) {
+          setFormData(prev => ({
+              ...prev,
+              exchangeRate: result.rate.toString()
+          }));
+          setRateSource(result.source || "Google Search");
+        } else {
+            alert("Não foi possível obter a cotação automaticamente. Por favor, insira manualmente.");
+        }
+    } catch (e) {
+        alert("Erro de conexão ao buscar dólar.");
+    } finally {
+        setLoadingRate(false);
     }
-    setLoadingRate(false);
   };
 
   const handleEditClick = (item: ProductItem) => {

@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 
 export const fetchCurrentExchangeRate = async (): Promise<{ rate: number; source?: string } | null> => {
@@ -13,24 +14,31 @@ export const fetchCurrentExchangeRate = async (): Promise<{ rate: number; source
 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: "Qual é a cotação exata do dólar comercial (USD) para Reais (BRL) hoje? Retorne APENAS um objeto JSON válido (sem markdown) com o campo 'rate' sendo um número (ex: 5.15).",
+      contents: "Qual é a cotação exata do dólar comercial (USD) para Reais (BRL) hoje? Retorne APENAS um objeto JSON válido neste formato: { \"rate\": 5.50 }. Não use markdown.",
       config: {
         tools: [{ googleSearch: {} }],
-        // responseMimeType: "application/json" is not supported when using tools in the current API version
       },
     });
 
     let text = response.text;
     if (!text) return null;
 
-    // Clean up markdown code blocks if present to ensure valid JSON
+    // 1. Clean up markdown code blocks
     text = text.replace(/```json/g, "").replace(/```/g, "").trim();
 
-    // extract JSON object if there is surrounding text
+    // 2. Aggressive JSON extraction: Find the first '{' and the last '}'
     const startIndex = text.indexOf('{');
     const endIndex = text.lastIndexOf('}');
+    
     if (startIndex !== -1 && endIndex !== -1) {
         text = text.substring(startIndex, endIndex + 1);
+    } else {
+        // Fallback: Try to find just a number if JSON fails
+        const rateMatch = text.match(/(\d+[.,]\d{2,})/);
+        if (rateMatch) {
+             const rate = parseFloat(rateMatch[0].replace(',', '.'));
+             return { rate, source: "Google Search (Estimado)" };
+        }
     }
 
     try {
@@ -38,8 +46,8 @@ export const fetchCurrentExchangeRate = async (): Promise<{ rate: number; source
       
       let source = "Google Search";
       
-      // Extract grounding metadata to provide accurate sources
-      // @ts-ignore - Accessing groundingMetadata which may not be strictly typed in all versions
+      // Extract grounding metadata
+      // @ts-ignore
       const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
       
       if (groundingChunks && Array.isArray(groundingChunks)) {

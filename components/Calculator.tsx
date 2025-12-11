@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { ProductItem, CalculatorMode, AppSettings, SimulationItem } from '../types';
 import { Input } from './Input';
@@ -126,12 +127,19 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
   const handleFetchRate = async () => {
     setLoadingRate(true);
     setRateSource(null);
-    const result = await fetchCurrentExchangeRate();
-    if (result) {
-      setSimRate(result.rate.toString());
-      setRateSource(result.source || "Google Search");
+    try {
+        const result = await fetchCurrentExchangeRate();
+        if (result) {
+          setSimRate(result.rate.toString());
+          setRateSource(result.source || "Google Search");
+        } else {
+             alert("Não foi possível obter a cotação automaticamente. Por favor, insira manualmente.");
+        }
+    } catch (e) {
+        alert("Erro de conexão ao buscar dólar.");
+    } finally {
+        setLoadingRate(false);
     }
-    setLoadingRate(false);
   };
 
   const getCalculation = () => {
@@ -479,6 +487,7 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
                       <button 
                           onClick={handleFetchRate}
                           disabled={loadingRate}
+                          type="button"
                           className="text-xs bg-apple-600 text-white px-3 py-1.5 rounded-full flex items-center gap-1.5 font-medium hover:bg-apple-700 disabled:opacity-50"
                       >
                           {loadingRate ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
