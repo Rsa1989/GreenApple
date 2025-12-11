@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
 import { AppSettings } from '../types';
-import { Package2, ArrowRight, Lock, Beaker } from 'lucide-react';
+import { Package2, ArrowRight, Lock, Beaker, Download, Share, PlusSquare, X, Smartphone } from 'lucide-react';
 import { toggleTestMode, getTestModeStatus } from '../services/firestoreService';
 
 interface LoginProps {
@@ -13,9 +12,37 @@ export const Login: React.FC<LoginProps> = ({ settings, onLogin }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(false);
   const [isTester, setIsTester] = useState(false);
+  
+  // PWA State
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isIos, setIsIos] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [showIosInstructions, setShowIosInstructions] = useState(false);
 
   useEffect(() => {
       setIsTester(getTestModeStatus());
+
+      // 1. Check if already installed (Standalone mode)
+      const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || 
+                               (window.navigator as any).standalone === true;
+      setIsStandalone(isStandaloneMode);
+
+      // 2. Detect iOS
+      const userAgent = window.navigator.userAgent.toLowerCase();
+      const isIosDevice = /iphone|ipad|ipod/.test(userAgent);
+      setIsIos(isIosDevice);
+
+      // 3. Capture Android/Chrome install prompt
+      const handleBeforeInstallPrompt = (e: Event) => {
+          e.preventDefault();
+          setDeferredPrompt(e);
+      };
+
+      window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+      return () => {
+          window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      };
   }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -34,12 +61,30 @@ export const Login: React.FC<LoginProps> = ({ settings, onLogin }) => {
       toggleTestMode(newState);
   };
 
+  const handleInstallClick = async () => {
+      if (isIos) {
+          setShowIosInstructions(true);
+      } else if (deferredPrompt) {
+          deferredPrompt.prompt();
+          const { outcome } = await deferredPrompt.userChoice;
+          if (outcome === 'accepted') {
+              setDeferredPrompt(null);
+          }
+      } else {
+          // Fallback if browser doesn't support automatic prompt but isn't iOS (e.g. standard desktop browser)
+          alert("Para instalar, use a opção 'Adicionar à Tela Inicial' ou 'Instalar App' no menu do seu navegador.");
+      }
+  };
+
+  // Only show button if NOT installed AND (We have an Android prompt OR it is iOS)
+  const showInstallButton = !isStandalone && (deferredPrompt || isIos);
+
   return (
     <div 
-      className="min-h-screen flex flex-col items-center justify-center p-6 animate-fade-in transition-colors duration-300"
+      className="min-h-screen flex flex-col items-center justify-center p-6 animate-fade-in transition-colors duration-300 relative"
       style={{ backgroundColor: settings.backgroundColor }}
     >
-      <div className="w-full max-w-sm bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100">
+      <div className="w-full max-w-sm bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100 z-10">
         
         {/* Header Branding */}
         <div 
@@ -97,18 +142,30 @@ export const Login: React.FC<LoginProps> = ({ settings, onLogin }) => {
                     <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </button>
 
-                <div className="pt-4 border-t border-gray-100 flex justify-center">
+                <div className="pt-4 border-t border-gray-100 flex flex-col gap-3">
+                     {/* Install App Button */}
+                     {showInstallButton && (
+                        <button
+                            type="button"
+                            onClick={handleInstallClick}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-bold transition-all bg-apple-50 text-apple-700 hover:bg-apple-100 border border-apple-100"
+                        >
+                            <Download className="w-4 h-4" />
+                            Baixar Aplicativo
+                        </button>
+                     )}
+
                     <button
                         type="button"
                         onClick={handleToggleTester}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium transition-all ${
+                        className={`flex items-center justify-center gap-2 px-4 py-2 rounded-full text-xs font-medium transition-all ${
                             isTester 
                             ? 'bg-orange-50 text-orange-600 border border-orange-200' 
-                            : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
+                            : 'text-gray-400 hover:text-gray-600'
                         }`}
                     >
                         <Beaker className="w-3.5 h-3.5" />
-                        {isTester ? "Modo Tester Ativo (Dados Isolados)" : "Ativar Modo Tester"}
+                        {isTester ? "Modo Tester Ativo" : "Versão de Testes"}
                     </button>
                 </div>
             </form>
@@ -116,6 +173,56 @@ export const Login: React.FC<LoginProps> = ({ settings, onLogin }) => {
       </div>
       
       <p className="mt-8 text-gray-400 text-sm">GreenApple Management</p>
+
+      {/* iOS Instructions Modal */}
+      {showIosInstructions && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setShowIosInstructions(false)}>
+              <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl relative" onClick={e => e.stopPropagation()}>
+                  <button 
+                    onClick={() => setShowIosInstructions(false)}
+                    className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 bg-gray-50 p-1 rounded-full"
+                  >
+                      <X className="w-5 h-5" />
+                  </button>
+
+                  <div className="flex flex-col items-center text-center">
+                      <div className="bg-gray-100 p-4 rounded-2xl mb-4">
+                        <Smartphone className="w-10 h-10 text-gray-700" />
+                      </div>
+                      <h3 className="text-xl font-bold text-gray-900 mb-2">Instalar no iPhone</h3>
+                      <p className="text-gray-500 text-sm mb-6 leading-relaxed">
+                          O iOS não permite instalação automática. Siga os passos abaixo para adicionar à tela de início:
+                      </p>
+
+                      <div className="space-y-4 w-full text-left">
+                          <div className="flex items-center gap-4 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                              <div className="bg-white p-2 rounded-lg shadow-sm text-blue-500">
+                                  <Share className="w-5 h-5" />
+                              </div>
+                              <span className="text-sm font-medium text-gray-700">1. Toque no botão <span className="font-bold">Compartilhar</span> na barra inferior.</span>
+                          </div>
+
+                          <div className="flex items-center gap-4 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                              <div className="bg-white p-2 rounded-lg shadow-sm text-gray-700">
+                                  <PlusSquare className="w-5 h-5" />
+                              </div>
+                              <span className="text-sm font-medium text-gray-700">2. Role para baixo e toque em <span className="font-bold">Adicionar à Tela de Início</span>.</span>
+                          </div>
+                      </div>
+
+                      <div className="mt-6 w-full flex items-center justify-center gap-2 text-xs text-gray-400">
+                          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                          Aplicativo Seguro e Leve
+                      </div>
+                  </div>
+                  
+                  {/* Visual Indicator arrow pointing down (only for mobile portrait) */}
+                  <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 text-white animate-bounce sm:hidden">
+                      <ArrowRight className="w-8 h-8 rotate-90" />
+                  </div>
+              </div>
+          </div>
+      )}
     </div>
   );
 };
