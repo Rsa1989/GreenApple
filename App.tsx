@@ -240,7 +240,7 @@ const App: React.FC = () => {
   }, [isAuthenticated, isTestMode]);
 
 
-  // Update Theme CSS Variables and Head Meta Tags (Icon, Color)
+  // Update Theme CSS Variables, Meta Tags, and DYNAMIC MANIFEST
   useEffect(() => {
     const baseColor = hexToRgb(settings.themeColor);
     const white: [number, number, number] = [255, 255, 255];
@@ -277,7 +277,7 @@ const App: React.FC = () => {
     }
     metaThemeColor.setAttribute('content', settings.headerBackgroundColor);
 
-    // Update Favicon and Apple Touch Icon
+    // Update Favicon and Apple Touch Icon (Browser Tab / iOS)
     const updateIcon = (url: string) => {
         // Standard Icon
         let linkIcon = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
@@ -298,11 +298,51 @@ const App: React.FC = () => {
         appleIcon.href = url;
     };
 
+    const activeIcon = settings.appIconUrl || settings.logoUrl;
+    if (activeIcon) {
+        updateIcon(activeIcon);
+    }
+
+    // --- DYNAMIC MANIFEST GENERATION (FOR ANDROID INSTALL) ---
+    // This allows the PWA to use the user-uploaded icon from Firestore/Settings
+    // instead of the static file in manifest.json
     if (settings.appIconUrl) {
-        updateIcon(settings.appIconUrl);
-    } else if (settings.logoUrl) {
-        // Fallback to Logo if no specific icon
-        updateIcon(settings.logoUrl);
+      const dynamicManifest = {
+        name: "GreenApple Gestão",
+        short_name: "GreenApple",
+        start_url: "/",
+        display: "standalone",
+        background_color: settings.backgroundColor,
+        theme_color: settings.headerBackgroundColor,
+        orientation: "portrait",
+        scope: "/",
+        icons: [
+          {
+            src: settings.appIconUrl, // User uploaded Base64 image
+            sizes: "192x192",
+            type: "image/png"
+          },
+          {
+            src: settings.appIconUrl, // User uploaded Base64 image
+            sizes: "512x512",
+            type: "image/png"
+          }
+        ]
+      };
+
+      const stringManifest = JSON.stringify(dynamicManifest);
+      const blob = new Blob([stringManifest], {type: 'application/json'});
+      const manifestURL = URL.createObjectURL(blob);
+      
+      let linkTag = document.querySelector("link[rel='manifest']") as HTMLLinkElement;
+      if (linkTag) {
+        linkTag.href = manifestURL;
+      } else {
+         linkTag = document.createElement('link');
+         linkTag.rel = 'manifest';
+         linkTag.href = manifestURL;
+         document.head.appendChild(linkTag);
+      }
     }
 
   }, [settings.themeColor, settings.backgroundColor, settings.headerBackgroundColor, settings.appIconUrl, settings.logoUrl]);
