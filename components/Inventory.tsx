@@ -33,7 +33,7 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
     costUsd: '',
     feeUsd: '',
     exchangeRate: '',
-    spread: '',
+    spread: '0', // Default explicitly to 0
     importTaxBrl: '',
     observation: '',
   });
@@ -56,7 +56,7 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
       setFormData(prev => ({
         ...prev,
         feeUsd: settings.defaultFeeUsd > 0 && !prev.feeUsd ? settings.defaultFeeUsd.toString() : prev.feeUsd,
-        spread: settings.defaultSpread > 0 && !prev.spread ? settings.defaultSpread.toString() : prev.spread,
+        spread: '0', // Ensure it stays 0 even if settings has a default
         importTaxBrl: settings.defaultImportTax > 0 && !prev.importTaxBrl ? settings.defaultImportTax.toString() : prev.importTaxBrl,
       }));
     }
@@ -83,8 +83,7 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
             feeUsd: initialOrderData.feeUsd?.toString() || settings.defaultFeeUsd.toString(),
             // REQUIREMENT: Exchange rate must be blank for new order
             exchangeRate: '',
-            // REQUIREMENT: Spread and Tax must be pre-filled from simulation
-            spread: initialOrderData.spread?.toString() || settings.defaultSpread.toString(),
+            spread: initialOrderData.spread?.toString() || '0',
             importTaxBrl: initialOrderData.importTaxBrl?.toString() || settings.defaultImportTax.toString(),
             // REQUIREMENT: Prefill observation with customer name
             observation: `Promessa de venda para: ${initialOrderData.customerName} ${initialOrderData.customerSurname}`.trim()
@@ -105,7 +104,7 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
     const rate = parseFloat(formData.exchangeRate) || 0;
     const spread = parseFloat(formData.spread) || 0;
     const tax = parseFloat(formData.importTaxBrl) || 0;
-
+    
     const baseUsd = costUsd + feeUsd;
     const effectiveRate = rate + spread;
     const totalBrl = (baseUsd * effectiveRate) + tax;
@@ -184,7 +183,7 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
       costUsd: '', 
       feeUsd: settings.defaultFeeUsd.toString(), 
       exchangeRate: '', 
-      spread: settings.defaultSpread.toString(), 
+      spread: '0', 
       importTaxBrl: settings.defaultImportTax.toString(),
       observation: ''
     });
@@ -497,9 +496,10 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
                     />
                     {rateSource && <span className="text-[10px] text-apple-600 ml-1">Fonte: {rateSource}</span>}
                 </div>
-
+                
+                {/* Spread restored, defaults to 0 in logic */}
                 <div className="relative">
-                   <Input name="spread" label="Spread (R$)" type="number" step="0.01" placeholder="0.10" value={formData.spread} onChange={handleChange} required />
+                   <Input name="spread" label="Spread (R$)" type="number" step="0.01" placeholder="0.00" value={formData.spread} onChange={handleChange} />
                 </div>
             </div>
 
