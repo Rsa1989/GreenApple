@@ -83,6 +83,7 @@ Obrigado por escolher a GreenApple!!`,
   whatsappTradeInLabel: "Troca",
   whatsappTradeInValueLabel: "Valor Avaliado",
   whatsappTotalLabel: "Total a pagar",
+  proposalExpirationDays: 7, // Default to 7 days
   adminPassword: '1234'
 };
 
@@ -181,6 +182,9 @@ const App: React.FC = () => {
         if (!mergedSettings.whatsappTradeInLabel) mergedSettings.whatsappTradeInLabel = "Troca";
         if (!mergedSettings.whatsappTradeInValueLabel) mergedSettings.whatsappTradeInValueLabel = "Valor Avaliado";
         if (!mergedSettings.whatsappTotalLabel) mergedSettings.whatsappTotalLabel = "Total a pagar";
+        
+        // Handle migration for proposal expiration
+        if (!mergedSettings.proposalExpirationDays) mergedSettings.proposalExpirationDays = 7;
 
         setSettings(mergedSettings);
       },
@@ -525,10 +529,14 @@ const App: React.FC = () => {
             <SimulationHistory 
                 simulations={simulations}
                 inventory={items}
+                settings={settings}
                 onDelete={handleDeleteSimulation}
                 onSelect={handleEditSimulation}
                 onSell={handleSellSimulation}
                 onOrder={handleOrderProduct}
+                // Tester props
+                isTestMode={isTestMode}
+                onUpdate={handleSaveSimulation}
             />
             )}
 

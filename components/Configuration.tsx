@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { AppSettings } from '../types';
 import { Input } from './Input';
@@ -217,30 +216,43 @@ export const Configuration: React.FC<ConfigurationProps> = ({ settings, onSave }
           <div>
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 ml-4">Valores Padrão</h3>
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
-              <Input
-                label="Taxa Atravessador"
-                subLabel="(USD)"
-                type="number"
-                step="0.01"
-                value={localSettings.defaultFeeUsd}
-                onChange={(e) => handleChange('defaultFeeUsd', e.target.value)}
-              />
-              <Input
-                label="Spread"
-                subLabel="(R$)"
-                type="number"
-                step="0.01"
-                value={localSettings.defaultSpread}
-                onChange={(e) => handleChange('defaultSpread', e.target.value)}
-              />
-              <Input
-                label="Taxa Importação"
-                subLabel="(R$)"
-                type="number"
-                step="0.01"
-                value={localSettings.defaultImportTax}
-                onChange={(e) => handleChange('defaultImportTax', e.target.value)}
-              />
+              <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="Taxa Atravessador"
+                    subLabel="(USD)"
+                    type="number"
+                    step="0.01"
+                    value={localSettings.defaultFeeUsd}
+                    onChange={(e) => handleChange('defaultFeeUsd', e.target.value)}
+                  />
+                   <Input
+                    label="Spread"
+                    subLabel="(R$)"
+                    type="number"
+                    step="0.01"
+                    value={localSettings.defaultSpread}
+                    onChange={(e) => handleChange('defaultSpread', e.target.value)}
+                  />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="Taxa Importação"
+                    subLabel="(R$)"
+                    type="number"
+                    step="0.01"
+                    value={localSettings.defaultImportTax}
+                    onChange={(e) => handleChange('defaultImportTax', e.target.value)}
+                  />
+                   <Input
+                    label="Validade Proposta"
+                    subLabel="(Dias)"
+                    type="number"
+                    step="1"
+                    min="1"
+                    value={localSettings.proposalExpirationDays || 7}
+                    onChange={(e) => handleChange('proposalExpirationDays', e.target.value)}
+                  />
+              </div>
             </div>
           </div>
 

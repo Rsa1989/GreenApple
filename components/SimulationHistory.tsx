@@ -1,27 +1,34 @@
-
 import React, { useState } from 'react';
-import { SimulationItem, ProductItem } from '../types';
-import { Clock, User, Trash2, Calendar, Search, FileText, DollarSign, Loader2, ExternalLink, CheckCircle2, AlertCircle, Copy, History, ShoppingBag, Repeat } from 'lucide-react';
+import { SimulationItem, ProductItem, AppSettings } from '../types';
+import { Clock, User, Trash2, Calendar, Search, FileText, DollarSign, Loader2, ExternalLink, CheckCircle2, AlertCircle, Copy, History, ShoppingBag, Repeat, CalendarClock, X } from 'lucide-react';
 
 interface SimulationHistoryProps {
   simulations: SimulationItem[];
   inventory: ProductItem[];
+  settings: AppSettings;
   onDelete: (id: string) => Promise<void> | void;
   onSelect?: (simulation: SimulationItem) => void;
   onSell?: (simulation: SimulationItem) => Promise<void> | void;
   onOrder?: (simulation: SimulationItem) => void;
+  // New props for Tester Mode
+  isTestMode?: boolean;
+  onUpdate?: (simulation: SimulationItem) => Promise<void> | void;
 }
 
-const EXPIRATION_DAYS = 7;
-const EXPIRATION_MS = EXPIRATION_DAYS * 24 * 60 * 60 * 1000;
-
-export const SimulationHistory: React.FC<SimulationHistoryProps> = ({ simulations, inventory, onDelete, onSelect, onSell, onOrder }) => {
+export const SimulationHistory: React.FC<SimulationHistoryProps> = ({ simulations, inventory, settings, onDelete, onSelect, onSell, onOrder, isTestMode, onUpdate }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [sellingId, setSellingId] = useState<string | null>(null);
   const [orderingId, setOrderingId] = useState<string | null>(null); // State to show loading when clicking Order
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [confirmingSellId, setConfirmingSellId] = useState<string | null>(null);
+  
+  // TESTER MODE: Track which menu is open
+  const [dateMenuOpenId, setDateMenuOpenId] = useState<string | null>(null);
+
+  // Determine expiration limit based on settings
+  const EXPIRATION_DAYS = settings.proposalExpirationDays || 7;
+  const EXPIRATION_MS = EXPIRATION_DAYS * 24 * 60 * 60 * 1000;
 
   const filteredSimulations = simulations.filter(sim => 
     sim.customerName.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -105,9 +112,30 @@ export const SimulationHistory: React.FC<SimulationHistoryProps> = ({ simulation
     if (onOrder) {
         setOrderingId(sim.id);
         onOrder(sim);
-        // We don't clear setOrderingId immediately because the parent component will likely 
-        // update the status or switch tabs, causing unmount or re-render
     }
+  };
+
+  // --- TESTER MODE: DATE MANIPULATION (NEW POPOVER LOGIC) ---
+  const toggleDateMenu = (e: React.MouseEvent, simId: string) => {
+      e.stopPropagation();
+      e.preventDefault();
+      // Toggle: if clicking same ID, close it. If clicking different, open that one.
+      setDateMenuOpenId(prev => prev === simId ? null : simId);
+  };
+
+  const handleApplyDateChange = async (days: number, sim: SimulationItem) => {
+      if (!onUpdate) return;
+      setDateMenuOpenId(null); // Close menu
+      
+      const newTimestamp = Date.now() - (days * 24 * 60 * 60 * 1000);
+      try {
+          await onUpdate({
+              ...sim,
+              createdAt: newTimestamp
+          });
+      } catch (error) {
+          alert("Falha ao atualizar data de teste.");
+      }
   };
 
   // --- OPEN/EDIT LOGIC ---
@@ -179,6 +207,7 @@ export const SimulationHistory: React.FC<SimulationHistoryProps> = ({ simulation
                 const showOrderButton = !isSold && !isOrdered && !isExpired && (sim.mode === 'SIMULATION' || isOutOfStock);
                 
                 const isOrdering = orderingId === sim.id;
+                const isMenuOpen = dateMenuOpenId === sim.id;
 
                 return (
                     <div 
@@ -214,14 +243,84 @@ export const SimulationHistory: React.FC<SimulationHistoryProps> = ({ simulation
                                     )}
                                 </div>
                             </div>
-                            <div className="text-right flex-shrink-0">
+                            <div className="text-right flex-shrink-0 flex flex-col items-end gap-0.5">
                                 <div className={`font-bold text-base ${isSold ? 'text-green-700' : isExpired ? 'text-gray-500' : 'text-gray-900'}`}>
                                     R$ {formatCurrency(sim.sellingPrice)}
                                 </div>
-                                <div className="text-[10px] text-gray-400 flex items-center justify-end gap-1">
+                                
+                                {/* Standard Date Display - Clickable in Test Mode */}
+                                <div 
+                                    className={`text-[10px] text-gray-400 flex items-center justify-end gap-1 ${isTestMode && !isSold ? 'cursor-pointer hover:text-orange-600 hover:bg-orange-50 px-1 rounded transition-colors' : ''}`}
+                                    onClick={isTestMode && !isSold ? (e) => toggleDateMenu(e, sim.id) : undefined}
+                                    title={isTestMode && !isSold ? "Clique para mudar a data" : ""}
+                                >
                                     <Calendar className="w-3 h-3" />
                                     {formatDate(sim.createdAt).split(',')[0]}
                                 </div>
+
+                                {/* TESTER MODE: Update Date Button with Popover */}
+                                {isTestMode && !isSold && (
+                                    <div className="relative inline-block mt-0.5">
+                                        <button 
+                                            onClick={(e) => toggleDateMenu(e, sim.id)}
+                                            className={`
+                                                px-2 py-1 rounded text-[9px] font-bold uppercase tracking-wide border flex items-center gap-1 shadow-sm active:translate-y-0.5 transition-all
+                                                ${isMenuOpen 
+                                                    ? 'bg-orange-200 text-orange-800 border-orange-300' 
+                                                    : 'bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-200'}
+                                            `}
+                                            title="Simular mudança de data para testar expiração"
+                                        >
+                                            <CalendarClock className="w-3 h-3" />
+                                            {isMenuOpen ? 'FECHAR MENU' : 'MUDAR DATA'}
+                                        </button>
+
+                                        {/* POPOVER MENU */}
+                                        {isMenuOpen && (
+                                            <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden animate-fade-in ring-1 ring-black ring-opacity-5">
+                                                <div className="bg-orange-50 px-3 py-2 border-b border-orange-100 flex justify-between items-center">
+                                                    <span className="text-[10px] font-bold text-orange-800 uppercase tracking-wider">Simular Data</span>
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); setDateMenuOpenId(null); }}
+                                                        className="p-0.5 rounded-full hover:bg-orange-200 text-orange-600"
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                                <div className="p-1 flex flex-col gap-0.5">
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); handleApplyDateChange(0, sim); }}
+                                                        className="flex items-center justify-between w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 rounded-lg transition-colors group"
+                                                    >
+                                                        <span>Hoje</span>
+                                                        <span className="bg-gray-100 text-gray-500 px-1.5 rounded text-[10px] group-hover:bg-white">0d</span>
+                                                    </button>
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); handleApplyDateChange(EXPIRATION_DAYS - 1, sim); }}
+                                                        className="flex items-center justify-between w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 rounded-lg transition-colors group"
+                                                    >
+                                                        <span>Quase Expirado</span>
+                                                        <span className="bg-orange-100 text-orange-600 px-1.5 rounded text-[10px] group-hover:bg-white">{EXPIRATION_DAYS - 1}d</span>
+                                                    </button>
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); handleApplyDateChange(EXPIRATION_DAYS + 1, sim); }}
+                                                        className="flex items-center justify-between w-full text-left px-3 py-2 text-xs text-red-600 font-bold hover:bg-red-50 rounded-lg transition-colors group"
+                                                    >
+                                                        <span>Expirado</span>
+                                                        <span className="bg-red-100 text-red-600 px-1.5 rounded text-[10px] group-hover:bg-white">{EXPIRATION_DAYS + 1}d</span>
+                                                    </button>
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); handleApplyDateChange(30, sim); }}
+                                                        className="flex items-center justify-between w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 rounded-lg transition-colors group"
+                                                    >
+                                                        <span>Mês Passado</span>
+                                                        <span className="bg-gray-100 text-gray-500 px-1.5 rounded text-[10px] group-hover:bg-white">30d</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -234,8 +333,12 @@ export const SimulationHistory: React.FC<SimulationHistoryProps> = ({ simulation
                             ) : (
                                 <>
                                     {isExpired && (
-                                        <span className="inline-flex items-center gap-1 bg-gray-200 text-gray-600 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase">
-                                            <History className="w-3 h-3" /> Obsoleto
+                                        <span 
+                                            className={`inline-flex items-center gap-1 bg-gray-200 text-gray-600 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${isTestMode ? 'cursor-pointer hover:bg-orange-200 hover:text-orange-800' : ''}`}
+                                            onClick={isTestMode ? (e) => toggleDateMenu(e, sim.id) : undefined}
+                                            title={isTestMode ? "Clique para mudar a data" : ""}
+                                        >
+                                            <History className="w-3 h-3" /> Obsoleto ({EXPIRATION_DAYS}d)
                                         </span>
                                     )}
                                     {isOutOfStock && (
@@ -276,8 +379,8 @@ export const SimulationHistory: React.FC<SimulationHistoryProps> = ({ simulation
                                 </button>
                              )}
 
-                             {/* Sell Button - Now Allowed even if Out of Stock */}
-                             {!isSold && onSell && (
+                             {/* Sell Button - Now Allowed even if Out of Stock, BUT NOT IF EXPIRED */}
+                             {!isSold && !isExpired && onSell && (
                                      <button
                                         type="button"
                                         onClick={(e) => handleClickSell(e, sim.id, sim)}

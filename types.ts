@@ -96,6 +96,9 @@ export interface AppSettings {
   whatsappTradeInValueLabel?: string;
   whatsappTotalLabel?: string;
 
+  // Configuration for History
+  proposalExpirationDays: number; // Days until a proposal is considered expired
+
   adminPassword: string; // Login password
 }
 
