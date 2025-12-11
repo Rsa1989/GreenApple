@@ -504,8 +504,8 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
               </div>
             )}
 
-            {/* Trade-In Section (Only for Stock New and Manual) */}
-            {(mode === CalculatorMode.FROM_STOCK || mode === CalculatorMode.SIMULATION) && (
+            {/* Trade-In Section (Available for ALL modes) */}
+            {(mode === CalculatorMode.FROM_STOCK || mode === CalculatorMode.SIMULATION || mode === CalculatorMode.FROM_USED_STOCK) && (
                 <div className="pt-4 border-t border-gray-100">
                     <div className="flex items-center gap-2 mb-3">
                          <div className="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">

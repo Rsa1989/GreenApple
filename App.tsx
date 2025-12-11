@@ -55,6 +55,11 @@ const generateInstallmentRules = () => {
   return rules;
 };
 
+// Hazard stripe pattern for Test Mode
+const testModePattern = {
+  backgroundImage: 'repeating-linear-gradient(45deg, #f97316, #f97316 10px, #ea580c 10px, #ea580c 20px)'
+};
+
 const DEFAULT_SETTINGS: AppSettings = {
   defaultFeeUsd: 0,
   defaultSpread: 0.10,
@@ -429,7 +434,7 @@ const App: React.FC = () => {
 
   return (
     <div 
-      className="min-h-screen flex flex-col transition-colors duration-300"
+      className={`min-h-screen flex flex-col transition-all duration-300 ${isTestMode ? 'border-[6px] border-orange-500' : ''}`}
       style={{ backgroundColor: settings.backgroundColor }}
     >
       {/* Sticky Top Header */}
@@ -438,9 +443,13 @@ const App: React.FC = () => {
         style={{ backgroundColor: settings.headerBackgroundColor }}
       >
         {isTestMode && (
-             <div className="bg-orange-500 text-white text-[10px] font-bold text-center py-1 uppercase tracking-widest flex items-center justify-center gap-1">
-                 <Beaker className="w-3 h-3" />
-                 Modo Tester Ativo - Dados Isolados
+             <div 
+                style={testModePattern}
+                className="text-white text-xs font-bold text-center py-2.5 uppercase tracking-widest flex items-center justify-center gap-2 shadow-sm relative z-50 animate-pulse"
+             >
+                 <Beaker className="w-4 h-4 text-white fill-white/30" />
+                 <span className="drop-shadow-md">⚠ AMBIENTE DE TESTES (SANDBOX) ⚠</span>
+                 <Beaker className="w-4 h-4 text-white fill-white/30" />
              </div>
         )}
         <div className="max-w-3xl mx-auto px-4 py-3 min-h-[80px] flex items-center justify-center relative">
@@ -467,56 +476,77 @@ const App: React.FC = () => {
             </button>
         </div>
       </header>
+      
+      {/* Test Mode Floating Badge */}
+      {isTestMode && (
+          <div className="fixed bottom-24 right-4 z-50 pointer-events-none opacity-90">
+             <div className="bg-orange-600 text-white px-4 py-2 rounded-full shadow-2xl border-2 border-white font-extrabold text-xs flex items-center gap-2 uppercase tracking-wide">
+                 <Beaker className="w-4 h-4 fill-white" />
+                 Test Mode
+             </div>
+          </div>
+      )}
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-3xl mx-auto px-4 w-full py-6">
-        {activeTab === 'inventory' && (
-          <Inventory 
-            items={items} 
-            settings={settings}
-            onAddItem={handleAddItem} 
-            onUpdateItem={handleUpdateItem}
-            onDeleteItem={handleDeleteItem}
-            initialOrderData={simulationToOrder}
-            onClearOrderData={handleClearOrderData}
-          />
+      <main className="flex-1 max-w-3xl mx-auto px-4 w-full py-6 relative">
+        {/* Subtle Watermark for Test Mode */}
+        {isTestMode && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 overflow-hidden opacity-[0.03]">
+                <div className="transform -rotate-45 text-9xl font-black text-gray-900 whitespace-nowrap select-none">
+                    TEST MODE
+                </div>
+            </div>
         )}
         
-        {activeTab === 'calculator' && (
-          <CalculatorComponent 
-            inventory={items} 
-            settings={settings}
-            onSaveSimulation={handleSaveSimulation}
-            initialData={simulationToEdit}
-            onCancelEdit={handleCancelEdit}
-          />
-        )}
+        <div className="relative z-10">
+            {activeTab === 'inventory' && (
+            <Inventory 
+                items={items} 
+                settings={settings}
+                onAddItem={handleAddItem} 
+                onUpdateItem={handleUpdateItem}
+                onDeleteItem={handleDeleteItem}
+                initialOrderData={simulationToOrder}
+                onClearOrderData={handleClearOrderData}
+            />
+            )}
+            
+            {activeTab === 'calculator' && (
+            <CalculatorComponent 
+                inventory={items} 
+                settings={settings}
+                onSaveSimulation={handleSaveSimulation}
+                initialData={simulationToEdit}
+                onCancelEdit={handleCancelEdit}
+            />
+            )}
 
-        {activeTab === 'history' && (
-          <SimulationHistory 
-            simulations={simulations}
-            inventory={items}
-            onDelete={handleDeleteSimulation}
-            onSelect={handleEditSimulation}
-            onSell={handleSellSimulation}
-            onOrder={handleOrderProduct}
-          />
-        )}
+            {activeTab === 'history' && (
+            <SimulationHistory 
+                simulations={simulations}
+                inventory={items}
+                onDelete={handleDeleteSimulation}
+                onSelect={handleEditSimulation}
+                onSell={handleSellSimulation}
+                onOrder={handleOrderProduct}
+            />
+            )}
 
-        {activeTab === 'reports' && (
-          <Reports 
-            transactions={transactions}
-            onClear={handleClearReports}
-            onDeleteTransaction={handleDeleteTransactionRow}
-          />
-        )}
+            {activeTab === 'reports' && (
+            <Reports 
+                transactions={transactions}
+                onClear={handleClearReports}
+                onDeleteTransaction={handleDeleteTransactionRow}
+            />
+            )}
 
-        {activeTab === 'settings' && (
-          <Configuration 
-            settings={settings}
-            onSave={handleSaveSettings}
-          />
-        )}
+            {activeTab === 'settings' && (
+            <Configuration 
+                settings={settings}
+                onSave={handleSaveSettings}
+            />
+            )}
+        </div>
       </main>
 
       {/* Fixed Bottom Navigation */}
