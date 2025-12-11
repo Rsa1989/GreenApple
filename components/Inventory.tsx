@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { ProductItem, AppSettings, SimulationItem } from '../types';
 import { Input } from './Input';
-import { Plus, Trash2, Search, X, ChevronDown, ChevronUp, Package, Pencil, BatteryCharging, Smartphone, Box, Sparkles, Loader2, StickyNote, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Search, X, ChevronDown, ChevronUp, Package, Pencil, BatteryCharging, Smartphone, Box, Sparkles, Loader2, StickyNote, AlertCircle, Download } from 'lucide-react';
 import { fetchCurrentExchangeRate } from '../services/geminiService';
 
 interface InventoryProps {
@@ -206,6 +206,60 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
       handleCancelEdit(); // Close forms when switching tabs
   };
 
+  const handleExportCSV = () => {
+      const isExportingUsed = activeSubTab === 'used';
+      // Export all items of the current category (New or Used), ignoring current search filter to export full list
+      const dataToExport = items.filter(item => isExportingUsed ? item.isUsed : !item.isUsed);
+
+      if (dataToExport.length === 0) {
+          alert(`Não há produtos ${isExportingUsed ? 'usados' : 'novos'} para exportar.`);
+          return;
+      }
+
+      let csvContent = "";
+      
+      if (isExportingUsed) {
+          // Headers for USED products
+          const headers = ["Nome", "Memória", "Cor", "Saúde Bateria", "Valor Entrada (R$)", "Observações"];
+          const rows = dataToExport.map(item => [
+              `"${item.name.replace(/"/g, '""')}"`,
+              item.memory,
+              item.color,
+              item.batteryHealth ? `${item.batteryHealth}%` : "",
+              item.totalCostBrl.toFixed(2).replace('.', ','),
+              `"${(item.observation || "").replace(/"/g, '""')}"`
+          ].join(";"));
+          csvContent = "\uFEFF" + [headers.join(";"), ...rows].join("\n");
+      } else {
+          // Headers for NEW products
+          const headers = ["Nome", "Memória", "Cor", "Custo (USD)", "Taxa (USD)", "Câmbio Dia (R$)", "Spread (R$)", "Taxa Imp. (R$)", "Custo Total (R$)", "Observações"];
+          const rows = dataToExport.map(item => [
+              `"${item.name.replace(/"/g, '""')}"`,
+              item.memory,
+              item.color,
+              item.costUsd.toFixed(2).replace('.', ','),
+              item.feeUsd.toFixed(2).replace('.', ','),
+              item.exchangeRate.toFixed(2).replace('.', ','),
+              item.spread.toFixed(2).replace('.', ','),
+              item.importTaxBrl.toFixed(2).replace('.', ','),
+              item.totalCostBrl.toFixed(2).replace('.', ','),
+              `"${(item.observation || "").replace(/"/g, '""')}"`
+          ].join(";"));
+          csvContent = "\uFEFF" + [headers.join(";"), ...rows].join("\n");
+      }
+
+      // Create Download Link
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const dateStr = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+      link.href = url;
+      link.setAttribute("download", `estoque_${isExportingUsed ? 'usados' : 'novos'}_${dateStr}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+  };
+
   const handleSubmitNew = (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -322,16 +376,25 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
         </button>
       </div>
 
-      {/* Search Bar */}
-      <div className="relative shadow-sm">
-        <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input 
-            type="text" 
-            placeholder={`Buscar em ${activeSubTab === 'new' ? 'novos' : 'usados'}...`} 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-11 pr-4 py-3.5 text-base border-none rounded-2xl bg-white focus:ring-0 shadow-sm"
-        />
+      {/* Search Bar & Export Button */}
+      <div className="flex gap-2">
+        <div className="relative shadow-sm flex-1">
+            <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input 
+                type="text" 
+                placeholder={`Buscar em ${activeSubTab === 'new' ? 'novos' : 'usados'}...`} 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-11 pr-4 py-3.5 text-base border-none rounded-2xl bg-white focus:ring-0 shadow-sm"
+            />
+        </div>
+        <button
+            onClick={handleExportCSV}
+            className="bg-white text-apple-700 border border-apple-100 px-4 rounded-2xl shadow-sm hover:bg-apple-50 transition-colors flex items-center justify-center"
+            title="Exportar Lista"
+        >
+            <Download className="w-5 h-5" />
+        </button>
       </div>
 
       {/* Action Buttons - Contextual based on Tab */}

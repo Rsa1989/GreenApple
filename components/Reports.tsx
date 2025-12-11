@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Transaction } from '../types';
-import { TrendingUp, DollarSign, Calendar, ArrowUpRight, ArrowDownLeft, Package, Wallet, Trash2, Loader2, BarChart3, AlertCircle } from 'lucide-react';
+import { TrendingUp, DollarSign, Calendar, ArrowUpRight, ArrowDownLeft, Package, Wallet, Trash2, Loader2, BarChart3, AlertCircle, Download } from 'lucide-react';
 
 interface ReportsProps {
   transactions: Transaction[];
@@ -102,37 +102,110 @@ export const Reports: React.FC<ReportsProps> = ({ transactions, onClear, onDelet
     }
   };
 
+  const handleExportCSV = () => {
+    if (transactions.length === 0) {
+      alert("Não há dados para exportar.");
+      return;
+    }
+
+    // Define CSV Headers
+    const headers = [
+      "Data",
+      "Hora",
+      "Tipo Movimentação",
+      "Descrição",
+      "Valor (R$)",
+      "Custo Produto (R$)",
+      "Lucro (R$)",
+      "Observações (Troca)"
+    ];
+
+    // Format Data Rows
+    const rows = transactions.map(t => {
+      const dateObj = new Date(t.date);
+      const dateStr = dateObj.toLocaleDateString('pt-BR');
+      const timeStr = dateObj.toLocaleTimeString('pt-BR');
+      
+      let typeLabel = "Outro";
+      if (t.type === 'SALE') typeLabel = "Venda";
+      if (t.type === 'STOCK_ENTRY') typeLabel = "Compra Estoque";
+      if (t.type === 'TRADE_IN_ENTRY') typeLabel = "Entrada Troca";
+
+      const profit = (t.type === 'SALE' ? (t.amount - (t.cost || 0)) : 0);
+      const tradeInInfo = t.tradeInValue ? `Troca aceita: R$ ${t.tradeInValue.toFixed(2).replace('.', ',')}` : "";
+
+      // Escape quotes in description to avoid breaking CSV
+      const safeDescription = t.description.replace(/"/g, '""');
+
+      return [
+        dateStr,
+        timeStr,
+        typeLabel,
+        `"${safeDescription}"`, // Quotes to handle commas inside text
+        t.amount.toFixed(2).replace('.', ','),
+        t.cost ? t.cost.toFixed(2).replace('.', ',') : "0,00",
+        profit.toFixed(2).replace('.', ','),
+        `"${tradeInInfo}"`
+      ].join(";"); // Using semicolon for better Excel PT-BR compatibility
+    });
+
+    // Add BOM for UTF-8 compatibility in Excel
+    const csvContent = "\uFEFF" + [headers.join(";"), ...rows].join("\n");
+
+    // Create Download Link
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `relatorio_greenapple_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="space-y-6 pb-20 animate-fade-in">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-6 h-6 text-apple-700" />
             <h2 className="text-xl font-bold text-apple-700">Relatório Financeiro</h2>
           </div>
           
-          {transactions.length > 0 && (
-              <button
-                onClick={handleClearClick}
-                disabled={isClearing}
-                className={`
-                    flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm
-                    ${confirmClear 
-                        ? 'bg-red-600 text-white hover:bg-red-700' 
-                        : 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500'}
-                `}
-              >
-                 {isClearing ? (
-                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                 ) : confirmClear ? (
-                     "Confirmar Limpeza?"
-                 ) : (
-                     <>
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Limpar Tudo
-                     </>
-                 )}
-              </button>
-          )}
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+              {transactions.length > 0 && (
+                  <>
+                    <button
+                        onClick={handleExportCSV}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm bg-apple-600 text-white hover:bg-apple-700 active:scale-95"
+                    >
+                        <Download className="w-3.5 h-3.5" />
+                        Exportar
+                    </button>
+
+                    <button
+                        onClick={handleClearClick}
+                        disabled={isClearing}
+                        className={`
+                            flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm
+                            ${confirmClear 
+                                ? 'bg-red-600 text-white hover:bg-red-700' 
+                                : 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500'}
+                        `}
+                    >
+                        {isClearing ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : confirmClear ? (
+                            "Confirmar?"
+                        ) : (
+                            <>
+                                <Trash2 className="w-3.5 h-3.5" />
+                                Limpar
+                            </>
+                        )}
+                    </button>
+                  </>
+              )}
+          </div>
       </div>
 
       {/* Primary Cards: Profit and Revenue */}
