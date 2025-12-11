@@ -306,7 +306,10 @@ const App: React.FC = () => {
     // --- DYNAMIC MANIFEST GENERATION (FOR ANDROID INSTALL) ---
     // This allows the PWA to use the user-uploaded icon from Firestore/Settings
     // instead of the static file in manifest.json
-    if (settings.appIconUrl) {
+    
+    // FIX: Use activeIcon (which falls back to logoUrl) instead of just appIconUrl
+    // This ensures that if the user only uploads a logo, it is used as the app icon.
+    if (activeIcon) {
       const dynamicManifest = {
         name: "GreenApple Gestão",
         short_name: "GreenApple",
@@ -318,13 +321,13 @@ const App: React.FC = () => {
         scope: "/",
         icons: [
           {
-            src: settings.appIconUrl, // User uploaded Base64 image
+            src: activeIcon, // User uploaded Base64 image (Logo or App Icon)
             sizes: "192x192",
             type: "image/png",
             purpose: "any maskable" // KEY FIX: Forces Android to remove white border
           },
           {
-            src: settings.appIconUrl, // User uploaded Base64 image
+            src: activeIcon, // User uploaded Base64 image (Logo or App Icon)
             sizes: "512x512",
             type: "image/png",
             purpose: "any maskable" // KEY FIX: Forces Android to remove white border
