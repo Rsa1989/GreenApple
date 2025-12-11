@@ -312,7 +312,7 @@ const App: React.FC = () => {
         short_name: "GreenApple",
         start_url: "/",
         display: "standalone",
-        background_color: settings.backgroundColor,
+        background_color: "#000000", // Force BLACK background for icon
         theme_color: settings.headerBackgroundColor,
         orientation: "portrait",
         scope: "/",
