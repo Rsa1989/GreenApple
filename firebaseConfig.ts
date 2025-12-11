@@ -1,6 +1,7 @@
 
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
 // TODO: Substitua os valores abaixo pelas configurações do seu projeto no Console do Firebase
 // Vá em Project Settings > General > Your apps > SDK setup and configuration
@@ -19,3 +20,4 @@ const app = initializeApp(firebaseConfig);
 
 // Initialize Firestore
 export const db = getFirestore(app);
+export const auth = getAuth(app);

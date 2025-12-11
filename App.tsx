@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Inventory } from './components/Inventory';
 import { CalculatorComponent } from './components/Calculator';
@@ -6,7 +7,7 @@ import { SimulationHistory } from './components/SimulationHistory';
 import { Reports } from './components/Reports';
 import { Login } from './components/Login';
 import { ProductItem, AppSettings, SimulationItem, Transaction } from './types';
-import { LayoutList, Calculator as CalcIcon, Settings, Package2, WifiOff, AlertTriangle, ExternalLink, History, TrendingUp, Beaker, LogOut } from 'lucide-react';
+import { LayoutList, Calculator as CalcIcon, Settings, Package2, WifiOff, AlertTriangle, ExternalLink, History, TrendingUp, Beaker, LogOut, Database } from 'lucide-react';
 import { 
   subscribeToInventory, 
   addInventoryItem, 
@@ -146,10 +147,10 @@ const App: React.FC = () => {
         console.error("App Inventory Error:", error);
         
         if (error.code === 'permission-denied') {
-           setDbError("Permissão negada. O banco de dados não está acessível.");
+           setDbError("Acesso negado. As regras de segurança estão bloqueando o acesso ou o banco não existe.");
            setIsPermissionError(true);
         } else if (error.message.includes("Cloud Firestore API has not been used")) {
-           setDbError("A API do Firestore não foi ativada no projeto.");
+           setDbError("O banco de dados Firestore ainda não foi criado.");
            setIsPermissionError(true);
         } else {
            setDbError(`Erro de conexão: ${error.message}`);
@@ -304,33 +305,28 @@ const App: React.FC = () => {
     }
 
     // --- DYNAMIC MANIFEST GENERATION (FOR ANDROID INSTALL) ---
-    // This allows the PWA to use the user-uploaded icon from Firestore/Settings
-    // instead of the static file in manifest.json
-    
-    // FIX: Use activeIcon (which falls back to logoUrl) instead of just appIconUrl
-    // This ensures that if the user only uploads a logo, it is used as the app icon.
     if (activeIcon) {
       const dynamicManifest = {
         name: "GreenApple Gestão",
         short_name: "GreenApple",
         start_url: "/",
         display: "standalone",
-        background_color: "#000000", // Force BLACK background for icon
+        background_color: "#000000",
         theme_color: settings.headerBackgroundColor,
         orientation: "portrait",
         scope: "/",
         icons: [
           {
-            src: activeIcon, // User uploaded Base64 image (Logo or App Icon)
+            src: activeIcon,
             sizes: "192x192",
             type: "image/png",
-            purpose: "any maskable" // KEY FIX: Forces Android to remove white border
+            purpose: "any maskable"
           },
           {
-            src: activeIcon, // User uploaded Base64 image (Logo or App Icon)
+            src: activeIcon,
             sizes: "512x512",
             type: "image/png",
-            purpose: "any maskable" // KEY FIX: Forces Android to remove white border
+            purpose: "any maskable"
           }
         ]
       };
@@ -467,28 +463,34 @@ const App: React.FC = () => {
       return <Login settings={settings} onLogin={handleLogin} />;
   }
 
+  // --- ERROR SCREEN: Database Not Created or Permission Denied ---
   if (isPermissionError) {
       return (
           <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-gray-50 text-center">
               <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full border border-red-100">
                   <div className="bg-red-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
-                      <AlertTriangle className="w-8 h-8 text-red-500" />
+                      <Database className="w-8 h-8 text-red-500" />
                   </div>
                   
-                  <h2 className="text-2xl font-bold text-gray-900 mb-3">Configuração Pendente</h2>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-3">Banco de Dados não encontrado</h2>
                   
                   <p className="text-gray-600 mb-6 leading-relaxed">
-                      O app está conectado ao Firebase, mas o <b>Banco de Dados (Firestore)</b> ainda não foi criado ou configurado corretamente.
+                      O app está conectado ao Firebase, mas o <b>Banco de Dados (Firestore)</b> precisa ser criado para funcionar.
                   </p>
 
                   <div className="text-left bg-gray-50 p-4 rounded-xl border border-gray-100 mb-6 space-y-3">
-                      <h3 className="font-semibold text-gray-800 text-sm uppercase tracking-wide">Como resolver:</h3>
+                      <h3 className="font-semibold text-gray-800 text-sm uppercase tracking-wide">Passo a Passo:</h3>
                       <ol className="list-decimal list-inside text-sm text-gray-600 space-y-2">
                           <li>Acesse o <a href="https://console.firebase.google.com/" target="_blank" className="text-blue-600 hover:underline">Console do Firebase</a>.</li>
                           <li>Clique no menu <b>Criação (Build)</b> &gt; <b>Firestore Database</b>.</li>
-                          <li>Clique em <b>Criar banco de dados</b>.</li>
-                          <li><span className="font-bold text-red-600">Importante:</span> Selecione <b>"Iniciar no modo de teste"</b> (Start in test mode) nas regras de segurança.</li>
-                          <li>Aguarde 1 minuto e recarregue esta página.</li>
+                          <li>Clique no botão <b>Criar banco de dados</b>.</li>
+                          <li>Escolha um local (ex: <i>nam5 (us-central)</i> ou Brasil).</li>
+                          <li>
+                             Na etapa de regras, você pode selecionar <b>"Iniciar no modo de teste"</b> para criar.
+                          </li>
+                          <li className="font-bold text-blue-700">
+                             Importante: Após criar, certifique-se de que as Regras de Segurança (aba Rules) contenham o código que permite leitura/escrita apenas se logado (request.auth != null).
+                          </li>
                       </ol>
                   </div>
 
@@ -501,6 +503,13 @@ const App: React.FC = () => {
                     Ir para o Console do Firebase
                     <ExternalLink className="w-4 h-4" />
                   </a>
+                  
+                  <button 
+                     onClick={() => window.location.reload()}
+                     className="mt-4 w-full text-gray-400 text-sm hover:text-gray-600 underline"
+                  >
+                      Já criei, tentar novamente
+                  </button>
               </div>
           </div>
       );
