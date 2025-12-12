@@ -7,7 +7,7 @@ import { SimulationHistory } from './components/SimulationHistory';
 import { Reports } from './components/Reports';
 import { Login } from './components/Login';
 import { ProductItem, AppSettings, SimulationItem, Transaction } from './types';
-import { LayoutList, Calculator as CalcIcon, Settings, Package2, WifiOff, AlertTriangle, ExternalLink, History, TrendingUp, Beaker, LogOut, Database } from 'lucide-react';
+import { LayoutList, Calculator as CalcIcon, Settings, Package2, WifiOff, AlertTriangle, ExternalLink, History, TrendingUp, Beaker, LogOut, Database, Loader2 } from 'lucide-react';
 import { 
   subscribeToInventory, 
   addInventoryItem, 
@@ -98,6 +98,9 @@ const App: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [isTestMode, setIsTestMode] = useState(false);
   
+  // Loading State for Settings (prevent flash of default content)
+  const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
+
   // State for editing simulation
   const [simulationToEdit, setSimulationToEdit] = useState<SimulationItem | null>(null);
 
@@ -116,6 +119,8 @@ const App: React.FC = () => {
     // Subscribe
     const unsubscribe = onTestModeChange((newMode) => {
         setIsTestMode(newMode);
+        // Reset settings loaded state when switching modes to ensure we refetch correctly
+        setIsSettingsLoaded(false);
     });
 
     return unsubscribe;
@@ -169,29 +174,35 @@ const App: React.FC = () => {
     
     unsubscribe = subscribeToSettings(
       (data) => {
-        // Handle migration for existing users: Ensure 18x rule exists if missing
-        const mergedSettings = { ...DEFAULT_SETTINGS, ...data };
-        
-        const has18x = mergedSettings.installmentRules.some(r => r.installments === 18);
-        if (!has18x) {
-            mergedSettings.installmentRules = [
-                ...mergedSettings.installmentRules,
-                { installments: 18, rate: 27 } // 27% default for 18x
-            ].sort((a, b) => a.installments - b.installments);
+        if (data) {
+             // Handle migration for existing users: Ensure 18x rule exists if missing
+            const mergedSettings = { ...DEFAULT_SETTINGS, ...data };
+            
+            const has18x = mergedSettings.installmentRules.some(r => r.installments === 18);
+            if (!has18x) {
+                mergedSettings.installmentRules = [
+                    ...mergedSettings.installmentRules,
+                    { installments: 18, rate: 27 } // 27% default for 18x
+                ].sort((a, b) => a.installments - b.installments);
+            }
+
+            // Handle migration for new labels
+            if (!mergedSettings.whatsappTradeInLabel) mergedSettings.whatsappTradeInLabel = "Troca";
+            if (!mergedSettings.whatsappTradeInValueLabel) mergedSettings.whatsappTradeInValueLabel = "Valor Avaliado";
+            if (!mergedSettings.whatsappTotalLabel) mergedSettings.whatsappTotalLabel = "Total a pagar";
+            
+            // Handle migration for proposal expiration
+            if (!mergedSettings.proposalExpirationDays) mergedSettings.proposalExpirationDays = 7;
+
+            setSettings(mergedSettings);
         }
-
-        // Handle migration for new labels
-        if (!mergedSettings.whatsappTradeInLabel) mergedSettings.whatsappTradeInLabel = "Troca";
-        if (!mergedSettings.whatsappTradeInValueLabel) mergedSettings.whatsappTradeInValueLabel = "Valor Avaliado";
-        if (!mergedSettings.whatsappTotalLabel) mergedSettings.whatsappTotalLabel = "Total a pagar";
-        
-        // Handle migration for proposal expiration
-        if (!mergedSettings.proposalExpirationDays) mergedSettings.proposalExpirationDays = 7;
-
-        setSettings(mergedSettings);
+        // Mark as loaded whether data exists or is null (default)
+        setIsSettingsLoaded(true);
       },
       (error) => {
           console.warn("Settings sync warning:", error.message);
+          // Even on error, we should probably let the app load with defaults rather than hang
+          setIsSettingsLoaded(true);
       }
     );
     
@@ -458,6 +469,15 @@ const App: React.FC = () => {
   };
 
   // --- RENDER LOGIC ---
+
+  // 1. Initial Loading State (Before Settings Load)
+  if (!isSettingsLoaded) {
+      return (
+          <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
+              <Loader2 className="w-12 h-12 text-gray-300 animate-spin mb-4" />
+          </div>
+      );
+  }
 
   if (!isAuthenticated) {
       return <Login settings={settings} onLogin={handleLogin} />;

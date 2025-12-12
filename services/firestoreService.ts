@@ -377,13 +377,15 @@ export const fetchSettings = async (): Promise<AppSettings | null> => {
 };
 
 export const subscribeToSettings = (
-  onData: (settings: AppSettings) => void,
+  onData: (settings: AppSettings | null) => void,
   onError?: (error: FirestoreError) => void
 ) => {
     return onSnapshot(doc(db, getCollectionName("settings"), SETTINGS_DOC_ID), {
       next: (doc) => {
         if (doc.exists()) {
             onData(doc.data() as AppSettings);
+        } else {
+            onData(null); // Notify explicitly that settings do not exist
         }
       },
       error: (error) => {
