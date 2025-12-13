@@ -81,11 +81,13 @@ export const addInventoryItem = async (item: ProductItem, customDescription?: st
     batch.set(itemRef, item);
 
     // 2. Add Transaction (Expense)
+    // NOTE: Expense is created regardless of status (ordered vs in_stock) as per requirements
     const transactionRef = doc(collection(db, getCollectionName("transactions")));
+    const statusText = item.status === 'ordered' ? '(Em Pedido)' : '';
     const transaction: Transaction = {
         id: transactionRef.id,
         type: 'STOCK_ENTRY',
-        description: customDescription || `Entrada: ${item.name} ${item.memory} ${item.isUsed ? '(Usado)' : ''}`,
+        description: customDescription || `Entrada ${statusText}: ${item.name} ${item.memory} ${item.isUsed ? '(Usado)' : ''}`,
         amount: item.totalCostBrl,
         date: Date.now(),
         relatedId: item.id
@@ -107,6 +109,17 @@ export const updateInventoryItem = async (item: ProductItem) => {
     console.error("Erro ao atualizar item:", error);
     throw error;
   }
+};
+
+export const receiveInventoryItem = async (item: ProductItem) => {
+    try {
+        const itemRef = doc(db, getCollectionName("products"), item.id);
+        // Change status from 'ordered' to 'in_stock'
+        await updateDoc(itemRef, { status: 'in_stock' });
+    } catch (error) {
+        console.error("Erro ao receber item:", error);
+        throw error;
+    }
 };
 
 export const deleteInventoryItem = async (id: string) => {

@@ -362,6 +362,17 @@ const App: React.FC = () => {
   const handleAddItem = async (item: ProductItem, customDescription?: string) => {
     try {
         await addInventoryItem(item, customDescription);
+
+        // NEW LOGIC: If this add came from a Simulation Order, NOW we update the status
+        if (simulationToOrder && simulationToOrder.id) {
+            await updateSimulation({ 
+              ...simulationToOrder, 
+              status: 'ordered',
+              productId: item.id // Link the newly created inventory item to the simulation
+            });
+            setSimulationToOrder(null); // Clear the state
+        }
+
     } catch (error: any) {
         alert("Erro ao salvar: " + error.message);
     }
@@ -452,14 +463,7 @@ const App: React.FC = () => {
   };
 
   const handleOrderProduct = async (simulation: SimulationItem) => {
-    if (simulation.id) {
-        try {
-            // Mark as ordered in DB to prevent duplicates
-            await updateSimulation({ ...simulation, status: 'ordered' });
-        } catch (error) {
-            console.error("Failed to update status to ordered", error);
-        }
-    }
+    // Only set state and switch tabs, DO NOT update DB yet to allow cancellation
     setSimulationToOrder(simulation);
     setActiveTab('inventory');
   };

@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { SimulationItem, ProductItem, AppSettings } from '../types';
 import { Clock, User, Trash2, Calendar, Search, FileText, DollarSign, Loader2, ExternalLink, CheckCircle2, AlertCircle, Copy, History, ShoppingBag, Repeat, CalendarClock, X } from 'lucide-react';
@@ -82,6 +83,25 @@ export const SimulationHistory: React.FC<SimulationHistoryProps> = ({ simulation
       e.preventDefault();
 
       if (sim.status === 'sold') return;
+
+      // VALIDATION: Prevent selling items that are 'ordered' but not received
+      const linkedProduct = inventory.find(i => i.id === sim.productId);
+      
+      // Logic Fix:
+      // If linked product exists, we rely PURELY on its status (in_stock vs ordered).
+      // If linked product is 'in_stock', we allow sale even if sim.status says 'ordered' (history).
+      if (linkedProduct) {
+          if (linkedProduct.status === 'ordered') {
+             alert("Este item ainda está marcado como 'Em Pedido'.\n\nPor favor, vá até a aba 'Estoque', localize o item na lista 'Em Pedido' e clique em 'Receber' para confirmar a chegada antes de realizar a venda.");
+             return;
+          }
+      } else {
+          // If no linked product (legacy or deleted), we check the simulation status as fallback
+          if (sim.status === 'ordered') {
+              alert("Este item consta como 'Em Pedido' mas o produto vinculado não foi encontrado no estoque.\n\nVerifique se o item já foi recebido ou excluído.");
+              return;
+          }
+      }
 
       if (confirmingSellId === id) {
           handleExecuteSell(sim);

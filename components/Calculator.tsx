@@ -318,7 +318,15 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
       }
   };
 
+  // Filter inventory logic updated:
+  // 1. Show available items AND ordered items.
+  // 2. Hide items that have a "Promessa de venda" (Reservation) in observation.
   const filteredInventory = inventory.filter(item => {
+    // Exclude items that are explicitly reserved for someone
+    const isReserved = item.observation && item.observation.toLowerCase().includes('promessa de venda para');
+    if (isReserved) return false;
+
+    // Filter by Type (Used vs New)
     if (mode === CalculatorMode.FROM_USED_STOCK) {
         return item.isUsed === true;
     }
@@ -427,10 +435,12 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
                     onChange={(e) => setSelectedProductId(e.target.value)}
                     className="w-full appearance-none px-4 py-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-apple-500 outline-none bg-white text-base"
                   >
-                    <option value="">Selecione um item...</option>
+                    <option value="">Selecione um item disponível...</option>
                     {filteredInventory.map(item => (
                       <option key={item.id} value={item.id}>
-                        {item.name} ({item.memory} - {item.color}) {item.isUsed ? `[Bateria: ${item.batteryHealth}%]` : ''}
+                        {item.name} ({item.memory} - {item.color})
+                        {item.status === 'ordered' ? ' [A CAMINHO]' : ''} 
+                        {item.isUsed ? ` [Bateria: ${item.batteryHealth}%]` : ''}
                       </option>
                     ))}
                   </select>
@@ -443,8 +453,8 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
                   <div className="mt-4 p-3 bg-amber-50 rounded-xl border border-amber-100 text-amber-700 text-sm flex items-center gap-2">
                       <AlertCircle className="w-4 h-4" />
                       {mode === CalculatorMode.FROM_USED_STOCK 
-                        ? "Nenhum aparelho usado cadastrado." 
-                        : "Sem produtos novos cadastrados."}
+                        ? "Nenhum aparelho usado disponível." 
+                        : "Sem produtos novos disponíveis."}
                   </div>
                 )}
               </div>
@@ -578,7 +588,7 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
                 </div>
             )}
 
-            <div className="pt-4 border-t border-gray-100">
+            <div className="pt-4 border-t border-gray-100 grid grid-cols-2 gap-4">
               <Input 
                   label="Margem de Lucro" 
                   subLabel="(%)" 
@@ -587,6 +597,23 @@ export const CalculatorComponent: React.FC<CalculatorProps> = ({ inventory, sett
                   type="number"
                   placeholder="20"
                   className="text-lg font-bold text-apple-700"
+              />
+              <Input 
+                  label="Preço Sugerido" 
+                  subLabel="(R$)" 
+                  value={sellPrice > 0 ? sellPrice.toFixed(2) : ''} 
+                  onChange={(e) => {
+                      // Reverse calculation: Update Margin based on Price
+                      const newPrice = parseFloat(e.target.value);
+                      if (!isNaN(newPrice) && costBrl > 0) {
+                          const newMargin = ((newPrice / costBrl) - 1) * 100;
+                          setMargin(newMargin.toFixed(2));
+                      }
+                  }}
+                  type="number"
+                  placeholder="0.00"
+                  disabled={costBrl === 0}
+                  className="text-lg font-bold text-gray-900 bg-gray-50"
               />
             </div>
       </div>

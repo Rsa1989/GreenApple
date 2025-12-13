@@ -14,6 +14,7 @@ export interface ProductItem {
   isUsed?: boolean;
   batteryHealth?: number;
   observation?: string; // Field for notes like "Reserved for X"
+  status?: 'in_stock' | 'ordered'; // NEW: Track if item is physically in stock or just ordered
 }
 
 export interface SimulationItem {

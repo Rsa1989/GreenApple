@@ -2,8 +2,9 @@
 import React, { useState, useEffect } from 'react';
 import { ProductItem, AppSettings, SimulationItem } from '../types';
 import { Input } from './Input';
-import { Plus, Trash2, Search, X, ChevronDown, ChevronUp, Package, Pencil, BatteryCharging, Smartphone, Box, Sparkles, Loader2, StickyNote, AlertCircle, Download } from 'lucide-react';
+import { Plus, Trash2, Search, X, ChevronDown, ChevronUp, Package, Pencil, BatteryCharging, Smartphone, Box, Sparkles, Loader2, StickyNote, AlertCircle, Download, ShoppingBag, CheckCircle2, Truck, Archive } from 'lucide-react';
 import { fetchCurrentExchangeRate } from '../services/geminiService';
+import { receiveInventoryItem } from '../services/firestoreService';
 
 interface InventoryProps {
   items: ProductItem[];
@@ -16,7 +17,12 @@ interface InventoryProps {
 }
 
 export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem, onUpdateItem, onDeleteItem, initialOrderData, onClearOrderData }) => {
+  // Main Tab: 'stock' (Inventory) or 'orders' (On Order)
+  const [mainTab, setMainTab] = useState<'stock' | 'orders'>('stock');
+  
+  // Sub Tab for Stock: New vs Used
   const [activeSubTab, setActiveSubTab] = useState<'new' | 'used'>('new');
+  
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isUsedFormOpen, setIsUsedFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -24,6 +30,10 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
   // Rate fetching state
   const [loadingRate, setLoadingRate] = useState(false);
   const [rateSource, setRateSource] = useState<string | null>(null);
+  
+  // Action States
+  const [receivingId, setReceivingId] = useState<string | null>(null);
+  const [confirmingReceiveId, setConfirmingReceiveId] = useState<string | null>(null);
   
   // Form Data for NEW products
   const [formData, setFormData] = useState({
@@ -33,9 +43,10 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
     costUsd: '',
     feeUsd: '',
     exchangeRate: '',
-    spread: '0', // Default explicitly to 0
+    spread: '0', 
     importTaxBrl: '',
     observation: '',
+    status: 'in_stock' as 'in_stock' | 'ordered' // NEW: Form field for status
   });
 
   // Form Data for USED products
@@ -46,6 +57,7 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
     batteryHealth: '',
     entryValueBrl: '',
     observation: '',
+    status: 'in_stock' as 'in_stock' | 'ordered'
   });
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -56,11 +68,12 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
       setFormData(prev => ({
         ...prev,
         feeUsd: settings.defaultFeeUsd > 0 && !prev.feeUsd ? settings.defaultFeeUsd.toString() : prev.feeUsd,
-        spread: '0', // Ensure it stays 0 even if settings has a default
+        spread: '0', 
         importTaxBrl: settings.defaultImportTax > 0 && !prev.importTaxBrl ? settings.defaultImportTax.toString() : prev.importTaxBrl,
+        status: mainTab === 'orders' ? 'ordered' : 'in_stock'
       }));
     }
-  }, [settings, editingId, initialOrderData]);
+  }, [settings, editingId, initialOrderData, mainTab]);
 
   // Handle Initial Order Data from Simulation History
   useEffect(() => {
@@ -68,6 +81,7 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
         setIsFormOpen(true);
         setIsUsedFormOpen(false);
         setActiveSubTab('new');
+        setMainTab('orders'); // FORCE to Orders tab
         setEditingId(null);
         
         // Use explicit fields if available, otherwise fallback to combined name
@@ -81,20 +95,20 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
             color: initialColor,
             costUsd: initialOrderData.costUsd?.toString() || '',
             feeUsd: initialOrderData.feeUsd?.toString() || settings.defaultFeeUsd.toString(),
-            // REQUIREMENT: Exchange rate must be blank for new order
-            exchangeRate: '',
+            // REQUIREMENT: Exchange rate must be preserved from Simulation
+            exchangeRate: initialOrderData.exchangeRate?.toString() || '',
             spread: initialOrderData.spread?.toString() || '0',
             importTaxBrl: initialOrderData.importTaxBrl?.toString() || settings.defaultImportTax.toString(),
             // REQUIREMENT: Prefill observation with customer name
-            observation: `Promessa de venda para: ${initialOrderData.customerName} ${initialOrderData.customerSurname}`.trim()
+            observation: `Promessa de venda para: ${initialOrderData.customerName} ${initialOrderData.customerSurname}`.trim(),
+            status: 'ordered' // Default to Ordered when coming from simulation
         });
 
         window.scrollTo({ top: 0, behavior: 'smooth' });
 
-        // Clear the data in parent so it doesn't persist on subsequent renders
-        if (onClearOrderData) {
-            onClearOrderData();
-        }
+        // FIX: Do NOT clear order data here immediately. 
+        // We must wait until the user actively Saves or Cancels.
+        // If we clear it here, App.tsx loses the reference to 'simulationToOrder' before 'handleAddItem' is called.
     }
   }, [initialOrderData, settings]);
 
@@ -135,10 +149,41 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
     }
   };
 
+  const handleReceiveClick = (e: React.MouseEvent, item: ProductItem) => {
+      e.stopPropagation(); 
+      e.preventDefault();
+      
+      if (confirmingReceiveId === item.id) {
+          executeReceive(item);
+      } else {
+          setConfirmingReceiveId(item.id);
+          // Auto-reset after 3s
+          setTimeout(() => setConfirmingReceiveId(prev => prev === item.id ? null : prev), 3000);
+      }
+  };
+
+  const executeReceive = async (item: ProductItem) => {
+      setReceivingId(item.id);
+      setConfirmingReceiveId(null);
+      try {
+          await receiveInventoryItem(item);
+      } catch (err: any) {
+          alert("Erro ao receber item: " + err.message);
+      } finally {
+          setReceivingId(null);
+      }
+  };
+
   const handleEditClick = (item: ProductItem) => {
     setEditingId(item.id);
     
-    // Ensure we switch to the correct tab when editing
+    // Determine context based on item properties
+    if (item.status === 'ordered') {
+        setMainTab('orders');
+    } else {
+        setMainTab('stock');
+    }
+
     if (item.isUsed) {
         setActiveSubTab('used');
         setUsedFormData({
@@ -148,6 +193,7 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
             batteryHealth: item.batteryHealth ? item.batteryHealth.toString() : '',
             entryValueBrl: item.totalCostBrl.toString(),
             observation: item.observation || '',
+            status: item.status || 'in_stock'
         });
         setIsUsedFormOpen(true);
         setIsFormOpen(false);
@@ -163,8 +209,9 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
             spread: item.spread.toString(),
             importTaxBrl: item.importTaxBrl.toString(),
             observation: item.observation || '',
+            status: item.status || 'in_stock'
         });
-        setRateSource(null); // Reset source on edit
+        setRateSource(null); 
         setIsFormOpen(true);
         setIsUsedFormOpen(false);
     }
@@ -185,7 +232,8 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
       exchangeRate: '', 
       spread: '0', 
       importTaxBrl: settings.defaultImportTax.toString(),
-      observation: ''
+      observation: '',
+      status: mainTab === 'orders' ? 'ordered' : 'in_stock'
     });
     // Reset Used Form
     setUsedFormData({
@@ -194,31 +242,33 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
         color: '',
         batteryHealth: '',
         entryValueBrl: '',
-        observation: ''
+        observation: '',
+        status: mainTab === 'orders' ? 'ordered' : 'in_stock'
     });
     setIsFormOpen(false);
     setIsUsedFormOpen(false);
-  };
 
-  const handleTabChange = (tab: 'new' | 'used') => {
-      setActiveSubTab(tab);
-      handleCancelEdit(); // Close forms when switching tabs
+    // FIX: Only clear the order data when the user explicitly CANCELS.
+    if (onClearOrderData) {
+        onClearOrderData();
+    }
   };
 
   const handleExportCSV = () => {
-      const isExportingUsed = activeSubTab === 'used';
-      // Export all items of the current category (New or Used), ignoring current search filter to export full list
-      const dataToExport = items.filter(item => isExportingUsed ? item.isUsed : !item.isUsed);
+      // Logic modified to support Orders tab
+      const isExportingOrders = mainTab === 'orders';
+      const isExportingUsed = activeSubTab === 'used' && !isExportingOrders;
+      
+      const dataToExport = filteredItems; // Use the currently filtered list
 
       if (dataToExport.length === 0) {
-          alert(`Não há produtos ${isExportingUsed ? 'usados' : 'novos'} para exportar.`);
+          alert(`Não há itens para exportar.`);
           return;
       }
 
       let csvContent = "";
       
       if (isExportingUsed) {
-          // Headers for USED products
           const headers = ["Nome", "Memória", "Cor", "Saúde Bateria", "Valor Entrada (R$)", "Observações"];
           const rows = dataToExport.map(item => [
               `"${item.name.replace(/"/g, '""')}"`,
@@ -230,9 +280,10 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
           ].join(";"));
           csvContent = "\uFEFF" + [headers.join(";"), ...rows].join("\n");
       } else {
-          // Headers for NEW products
-          const headers = ["Nome", "Memória", "Cor", "Custo (USD)", "Taxa (USD)", "Câmbio Dia (R$)", "Spread (R$)", "Taxa Imp. (R$)", "Custo Total (R$)", "Observações"];
+          // New Products OR Orders
+          const headers = ["Status", "Nome", "Memória", "Cor", "Custo (USD)", "Taxa (USD)", "Câmbio Dia (R$)", "Spread (R$)", "Taxa Imp. (R$)", "Custo Total (R$)", "Observações"];
           const rows = dataToExport.map(item => [
+              item.status === 'ordered' ? "EM PEDIDO" : "ESTOQUE",
               `"${item.name.replace(/"/g, '""')}"`,
               item.memory,
               item.color,
@@ -247,13 +298,13 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
           csvContent = "\uFEFF" + [headers.join(";"), ...rows].join("\n");
       }
 
-      // Create Download Link
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       const dateStr = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+      const filename = isExportingOrders ? `pedidos_${dateStr}.csv` : `estoque_${isExportingUsed ? 'usados' : 'novos'}_${dateStr}.csv`;
       link.href = url;
-      link.setAttribute("download", `estoque_${isExportingUsed ? 'usados' : 'novos'}_${dateStr}.csv`);
+      link.setAttribute("download", filename);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -262,7 +313,6 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
   const handleSubmitNew = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // VALIDATION: Exchange Rate is mandatory
     if (!formData.exchangeRate || parseFloat(formData.exchangeRate) === 0) {
         alert("O campo Dólar Dia é obrigatório e deve ser maior que zero.");
         return;
@@ -283,15 +333,15 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
       totalCostBrl: totalBrl,
       createdAt: editingId ? (items.find(i => i.id === editingId)?.createdAt || Date.now()) : Date.now(),
       isUsed: false,
-      observation: formData.observation
+      observation: formData.observation,
+      status: formData.status // Save status
     };
 
     if (editingId) {
       onUpdateItem(itemData);
     } else {
-      // Logic for reserved purchase description in transaction log
       const customDescription = initialOrderData 
-        ? `Compra sob reserva de ${initialOrderData.customerName} ${initialOrderData.customerSurname}`.trim()
+        ? `Compra (Pedido) sob reserva de ${initialOrderData.customerName} ${initialOrderData.customerSurname}`.trim()
         : undefined;
       onAddItem(itemData, customDescription);
     }
@@ -315,7 +365,8 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
           createdAt: editingId ? (items.find(i => i.id === editingId)?.createdAt || Date.now()) : Date.now(),
           isUsed: true,
           batteryHealth: parseInt(usedFormData.batteryHealth) || undefined,
-          observation: usedFormData.observation
+          observation: usedFormData.observation,
+          status: usedFormData.status // Save status
       };
 
       if (editingId) {
@@ -326,23 +377,31 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
       handleCancelEdit();
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleUsedChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUsedChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       const { name, value } = e.target;
       setUsedFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // Filter items based on Active Tab AND Search Term
+  // --- FILTERING LOGIC ---
   const filteredItems = items.filter(item => {
-    // 1. Filter by Tab (New vs Used)
-    if (activeSubTab === 'new' && item.isUsed) return false;
-    if (activeSubTab === 'used' && !item.isUsed) return false;
+    // 1. Filter by Main Tab (Stock vs Orders)
+    const itemStatus = item.status || 'in_stock'; // Default to in_stock if undefined (migration)
+    
+    if (mainTab === 'stock' && itemStatus !== 'in_stock') return false;
+    if (mainTab === 'orders' && itemStatus !== 'ordered') return false;
 
-    // 2. Filter by Search
+    // 2. Filter by Sub Tab (Only for Stock)
+    if (mainTab === 'stock') {
+        if (activeSubTab === 'new' && item.isUsed) return false;
+        if (activeSubTab === 'used' && !item.isUsed) return false;
+    }
+
+    // 3. Filter by Search
     return (
         item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
         item.memory.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -350,30 +409,54 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
     );
   });
 
+  // Calculate Counts for Tabs
+  const ordersCount = items.filter(i => i.status === 'ordered').length;
+
   return (
     <div className="space-y-6 pb-20 animate-fade-in">
       
-      {/* Sub Tabs */}
-      <div className="bg-gray-200 p-1 rounded-xl flex shadow-inner">
-        <button
-          onClick={() => handleTabChange('new')}
-          className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-2 rounded-lg text-sm font-semibold transition-all ${
-            activeSubTab === 'new' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
-          }`}
-        >
-          <Box className="w-4 h-4" />
-          Produtos Novos
-        </button>
-        <button
-          onClick={() => handleTabChange('used')}
-          className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-2 rounded-lg text-sm font-semibold transition-all ${
-            activeSubTab === 'used' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
-          }`}
-        >
-          <Smartphone className="w-4 h-4" />
-          Produtos Usados
-        </button>
+      {/* Main Tabs (Stock vs Orders) */}
+      <div className="flex p-1 bg-gray-100 rounded-xl mb-2">
+         <button 
+            onClick={() => { setMainTab('stock'); handleCancelEdit(); }}
+            className={`flex-1 py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all ${mainTab === 'stock' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
+         >
+             <Package className="w-4 h-4" />
+             Estoque
+         </button>
+         <button 
+            onClick={() => { setMainTab('orders'); handleCancelEdit(); }}
+            className={`flex-1 py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all ${mainTab === 'orders' ? 'bg-white shadow-sm text-apple-600' : 'text-gray-400 hover:text-gray-600'}`}
+         >
+             <Truck className="w-4 h-4" />
+             Em Pedido
+             {ordersCount > 0 && <span className="bg-apple-600 text-white text-[10px] px-1.5 rounded-full">{ordersCount}</span>}
+         </button>
       </div>
+
+      {/* Sub Tabs (Only for Stock) */}
+      {mainTab === 'stock' && (
+        <div className="bg-gray-200 p-1 rounded-xl flex shadow-inner">
+            <button
+            onClick={() => { setActiveSubTab('new'); handleCancelEdit(); }}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-2 rounded-lg text-sm font-semibold transition-all ${
+                activeSubTab === 'new' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+            }`}
+            >
+            <Box className="w-4 h-4" />
+            Produtos Novos
+            </button>
+            <button
+            onClick={() => { setActiveSubTab('used'); handleCancelEdit(); }}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-2 rounded-lg text-sm font-semibold transition-all ${
+                activeSubTab === 'used' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+            }`}
+            >
+            <Smartphone className="w-4 h-4" />
+            Produtos Usados
+            </button>
+        </div>
+      )}
 
       {/* Search Bar & Export Button */}
       <div className="flex gap-2">
@@ -381,7 +464,7 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
             <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
             <input 
                 type="text" 
-                placeholder={`Buscar em ${activeSubTab === 'new' ? 'novos' : 'usados'}...`} 
+                placeholder={mainTab === 'orders' ? "Buscar pedidos..." : `Buscar em ${activeSubTab === 'new' ? 'novos' : 'usados'}...`}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-11 pr-4 py-3.5 text-base border-none rounded-2xl bg-white focus:ring-0 shadow-sm"
@@ -396,11 +479,12 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
         </button>
       </div>
 
-      {/* Action Buttons - Contextual based on Tab */}
+      {/* Action Buttons */}
       <div className="space-y-3">
-        {/* NEW PRODUCT BUTTON - Only Show if on New Tab */}
-        {activeSubTab === 'new' && (
-            <button 
+        {/* Only Show "Add" buttons if not editing or if we want to add */}
+        
+        {(mainTab === 'stock' && activeSubTab === 'new') || mainTab === 'orders' ? (
+             <button 
                 onClick={() => {
                     if (editingId) handleCancelEdit();
                     setIsFormOpen(!isFormOpen);
@@ -414,14 +498,15 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
                     <div className="bg-white/20 p-1.5 rounded-lg">
                         {editingId && !isUsedFormOpen ? <Pencil className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
                     </div>
-                    <span className="text-lg">{editingId && !isUsedFormOpen ? "Editando Produto" : "Cadastrar Novo"}</span>
+                    <span className="text-lg">
+                        {editingId && !isUsedFormOpen ? "Editando Produto" : (mainTab === 'orders' ? "Novo Pedido" : "Cadastrar Novo")}
+                    </span>
                 </div>
                 {isFormOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
             </button>
-        )}
+        ) : null}
 
-        {/* USED PRODUCT BUTTON - Only Show if on Used Tab */}
-        {activeSubTab === 'used' && (
+        {mainTab === 'stock' && activeSubTab === 'used' && (
             <button 
                 onClick={() => {
                     if (editingId) handleCancelEdit();
@@ -443,8 +528,8 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
         )}
       </div>
 
-      {/* NEW Product Form */}
-      {isFormOpen && activeSubTab === 'new' && (
+      {/* NEW Product Form (Or Order Form) */}
+      {isFormOpen && (
         <div className={`bg-white p-5 rounded-2xl shadow-sm border animate-fade-in ${editingId ? 'border-amber-200' : 'border-gray-100'}`}>
           <form onSubmit={handleSubmitNew} className="space-y-5">
             <div className="grid grid-cols-1 gap-4">
@@ -462,6 +547,20 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
               </div>
             </div>
 
+            {/* STATUS TOGGLE */}
+            <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700">Situação do Item</span>
+                <select 
+                    name="status"
+                    value={formData.status}
+                    onChange={handleChange}
+                    className="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-apple-500 focus:border-apple-500 block p-2.5 outline-none font-bold"
+                >
+                    <option value="in_stock">Em Estoque (Físico)</option>
+                    <option value="ordered">Em Pedido (A caminho)</option>
+                </select>
+            </div>
+
             <hr className="border-gray-100 my-2" />
             
             <div className="grid grid-cols-2 gap-4">
@@ -470,7 +569,6 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-                {/* Custom Input Block for Exchange Rate with Fetch Button */}
                 <div className="flex flex-col gap-1.5">
                     <div className="flex justify-between items-center ml-1">
                         <label className="text-sm font-medium text-gray-700">Dólar Dia (R$)</label>
@@ -497,7 +595,6 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
                     {rateSource && <span className="text-[10px] text-apple-600 ml-1">Fonte: {rateSource}</span>}
                 </div>
                 
-                {/* Spread restored, defaults to 0 in logic */}
                 <div className="relative">
                    <Input name="spread" label="Spread (R$)" type="number" step="0.01" placeholder="0.00" value={formData.spread} onChange={handleChange} />
                 </div>
@@ -535,7 +632,7 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
       )}
 
       {/* USED Product Form */}
-      {isUsedFormOpen && activeSubTab === 'used' && (
+      {isUsedFormOpen && (
           <div className={`bg-white p-5 rounded-2xl shadow-sm border animate-fade-in ${editingId ? 'border-amber-200' : 'border-gray-100'}`}>
             <div className="mb-4 flex items-center gap-2 text-gray-600">
                 <Smartphone className="w-5 h-5" />
@@ -555,6 +652,20 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
                   <Input name="memory" label="Memória" placeholder="128GB" value={usedFormData.memory} onChange={handleUsedChange} required />
                   <Input name="color" label="Cor" placeholder="Ex: Azul" value={usedFormData.color} onChange={handleUsedChange} required />
               </div>
+
+               {/* STATUS TOGGLE */}
+               <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-700">Situação do Item</span>
+                    <select 
+                        name="status"
+                        value={usedFormData.status}
+                        onChange={handleUsedChange}
+                        className="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-apple-500 focus:border-apple-500 block p-2.5 outline-none font-bold"
+                    >
+                        <option value="in_stock">Em Estoque (Físico)</option>
+                        <option value="ordered">Em Pedido (A caminho)</option>
+                    </select>
+               </div>
 
               <div className="grid grid-cols-2 gap-4">
                    <Input name="batteryHealth" label="Saúde Bateria (%)" type="number" placeholder="Ex: 92" value={usedFormData.batteryHealth} onChange={handleUsedChange} />
@@ -595,11 +706,15 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
       <div className="space-y-4">
         {filteredItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-                <Package className="w-12 h-12 mb-3 opacity-20" />
-                <p>Nenhum item encontrado.</p>
+                {mainTab === 'orders' ? <Truck className="w-12 h-12 mb-3 opacity-20" /> : <Package className="w-12 h-12 mb-3 opacity-20" />}
+                <p>{mainTab === 'orders' ? "Nenhum pedido em andamento." : "Nenhum item em estoque."}</p>
             </div>
         ) : (
-            filteredItems.map(item => (
+            filteredItems.map(item => {
+                const isConfirmingReceive = confirmingReceiveId === item.id;
+                const isReceiving = receivingId === item.id;
+
+                return (
                 <div key={item.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-3 relative overflow-hidden transition-all hover:shadow-md animate-fade-in">
                     <div className="flex justify-between items-start">
                         <div>
@@ -608,6 +723,11 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
                                 {item.isUsed && (
                                     <span className="bg-gray-800 text-white text-[10px] px-2 py-0.5 rounded-full font-bold tracking-wide">
                                         USADO
+                                    </span>
+                                )}
+                                {item.status === 'ordered' && (
+                                    <span className="bg-blue-100 text-blue-700 text-[10px] px-2 py-0.5 rounded-full font-bold tracking-wide border border-blue-200">
+                                        EM PEDIDO
                                     </span>
                                 )}
                             </div>
@@ -628,6 +748,33 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
                             )}
                         </div>
                         <div className="flex gap-2">
+                            {/* RECEIVE BUTTON (Only for Ordered Items) */}
+                            {item.status === 'ordered' && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => handleReceiveClick(e, item)}
+                                    disabled={isReceiving}
+                                    className={`
+                                        p-2 rounded-lg transition-all flex items-center gap-1 font-bold text-xs shadow-sm
+                                        ${isConfirmingReceive 
+                                            ? 'bg-green-600 text-white w-24 justify-center' 
+                                            : 'bg-green-50 text-green-600 hover:bg-green-100'}
+                                    `}
+                                    title="Receber Item no Estoque"
+                                >
+                                    {isReceiving ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : isConfirmingReceive ? (
+                                        "Confirmar?"
+                                    ) : (
+                                        <>
+                                           <CheckCircle2 className="w-4 h-4" />
+                                           <span className="hidden sm:inline">Receber</span>
+                                        </>
+                                    )}
+                                </button>
+                            )}
+
                             <button 
                                 onClick={() => handleEditClick(item)}
                                 className="bg-gray-50 text-gray-500 p-2 rounded-lg hover:bg-gray-100 transition-colors"
@@ -668,7 +815,7 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
                          </div>
                     </div>
                 </div>
-            ))
+            )})
         )}
       </div>
     </div>
