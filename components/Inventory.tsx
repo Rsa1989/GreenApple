@@ -20,7 +20,7 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
   // Main Tab: 'stock' (Inventory) or 'orders' (On Order)
   const [mainTab, setMainTab] = useState<'stock' | 'orders'>('stock');
   
-  // Sub Tab for Stock: New vs Used
+  // Sub Tab for Stock/Orders: New vs Used
   const [activeSubTab, setActiveSubTab] = useState<'new' | 'used'>('new');
   
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -71,6 +71,11 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
         spread: '0', 
         importTaxBrl: settings.defaultImportTax > 0 && !prev.importTaxBrl ? settings.defaultImportTax.toString() : prev.importTaxBrl,
         status: mainTab === 'orders' ? 'ordered' : 'in_stock'
+      }));
+      // Also update Used form default status
+      setUsedFormData(prev => ({
+          ...prev,
+          status: mainTab === 'orders' ? 'ordered' : 'in_stock'
       }));
     }
   }, [settings, editingId, initialOrderData, mainTab]);
@@ -257,7 +262,7 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
   const handleExportCSV = () => {
       // Logic modified to support Orders tab
       const isExportingOrders = mainTab === 'orders';
-      const isExportingUsed = activeSubTab === 'used' && !isExportingOrders;
+      const isExportingUsed = activeSubTab === 'used';
       
       const dataToExport = filteredItems; // Use the currently filtered list
 
@@ -269,8 +274,9 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
       let csvContent = "";
       
       if (isExportingUsed) {
-          const headers = ["Nome", "Memória", "Cor", "Saúde Bateria", "Valor Entrada (R$)", "Observações"];
+          const headers = ["Status", "Nome", "Memória", "Cor", "Saúde Bateria", "Valor Entrada (R$)", "Observações"];
           const rows = dataToExport.map(item => [
+              item.status === 'ordered' ? "EM PEDIDO" : "ESTOQUE",
               `"${item.name.replace(/"/g, '""')}"`,
               item.memory,
               item.color,
@@ -280,7 +286,7 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
           ].join(";"));
           csvContent = "\uFEFF" + [headers.join(";"), ...rows].join("\n");
       } else {
-          // New Products OR Orders
+          // New Products
           const headers = ["Status", "Nome", "Memória", "Cor", "Custo (USD)", "Taxa (USD)", "Câmbio Dia (R$)", "Spread (R$)", "Taxa Imp. (R$)", "Custo Total (R$)", "Observações"];
           const rows = dataToExport.map(item => [
               item.status === 'ordered' ? "EM PEDIDO" : "ESTOQUE",
@@ -302,7 +308,7 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       const dateStr = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
-      const filename = isExportingOrders ? `pedidos_${dateStr}.csv` : `estoque_${isExportingUsed ? 'usados' : 'novos'}_${dateStr}.csv`;
+      const filename = isExportingOrders ? `pedidos_${isExportingUsed ? 'usados' : 'novos'}_${dateStr}.csv` : `estoque_${isExportingUsed ? 'usados' : 'novos'}_${dateStr}.csv`;
       link.href = url;
       link.setAttribute("download", filename);
       document.body.appendChild(link);
@@ -395,11 +401,9 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
     if (mainTab === 'stock' && itemStatus !== 'in_stock') return false;
     if (mainTab === 'orders' && itemStatus !== 'ordered') return false;
 
-    // 2. Filter by Sub Tab (Only for Stock)
-    if (mainTab === 'stock') {
-        if (activeSubTab === 'new' && item.isUsed) return false;
-        if (activeSubTab === 'used' && !item.isUsed) return false;
-    }
+    // 2. Filter by Sub Tab (New vs Used) - NOW APPLIES TO BOTH TABS
+    if (activeSubTab === 'new' && item.isUsed) return false;
+    if (activeSubTab === 'used' && !item.isUsed) return false;
 
     // 3. Filter by Search
     return (
@@ -422,7 +426,7 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
             className={`flex-1 py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all ${mainTab === 'stock' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}
          >
              <Package className="w-4 h-4" />
-             Estoque
+             Estoque Físico
          </button>
          <button 
             onClick={() => { setMainTab('orders'); handleCancelEdit(); }}
@@ -434,29 +438,27 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
          </button>
       </div>
 
-      {/* Sub Tabs (Only for Stock) */}
-      {mainTab === 'stock' && (
-        <div className="bg-gray-200 p-1 rounded-xl flex shadow-inner">
-            <button
-            onClick={() => { setActiveSubTab('new'); handleCancelEdit(); }}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-2 rounded-lg text-sm font-semibold transition-all ${
-                activeSubTab === 'new' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
-            }`}
-            >
-            <Box className="w-4 h-4" />
-            Produtos Novos
-            </button>
-            <button
-            onClick={() => { setActiveSubTab('used'); handleCancelEdit(); }}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-2 rounded-lg text-sm font-semibold transition-all ${
-                activeSubTab === 'used' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
-            }`}
-            >
-            <Smartphone className="w-4 h-4" />
-            Produtos Usados
-            </button>
-        </div>
-      )}
+      {/* Sub Tabs (Now visible for BOTH Stock and Orders) */}
+      <div className="bg-gray-200 p-1 rounded-xl flex shadow-inner">
+        <button
+        onClick={() => { setActiveSubTab('new'); handleCancelEdit(); }}
+        className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-2 rounded-lg text-sm font-semibold transition-all ${
+            activeSubTab === 'new' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+        }`}
+        >
+        <Box className="w-4 h-4" />
+        Novos
+        </button>
+        <button
+        onClick={() => { setActiveSubTab('used'); handleCancelEdit(); }}
+        className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-2 rounded-lg text-sm font-semibold transition-all ${
+            activeSubTab === 'used' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+        }`}
+        >
+        <Smartphone className="w-4 h-4" />
+        Usados
+        </button>
+      </div>
 
       {/* Search Bar & Export Button */}
       <div className="flex gap-2">
@@ -481,9 +483,8 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
 
       {/* Action Buttons */}
       <div className="space-y-3">
-        {/* Only Show "Add" buttons if not editing or if we want to add */}
-        
-        {(mainTab === 'stock' && activeSubTab === 'new') || mainTab === 'orders' ? (
+        {/* Button for NEW Products (Shows if subtab is 'new') */}
+        {activeSubTab === 'new' && (
              <button 
                 onClick={() => {
                     if (editingId) handleCancelEdit();
@@ -499,14 +500,17 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
                         {editingId && !isUsedFormOpen ? <Pencil className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
                     </div>
                     <span className="text-lg">
-                        {editingId && !isUsedFormOpen ? "Editando Produto" : (mainTab === 'orders' ? "Novo Pedido" : "Cadastrar Novo")}
+                        {editingId && !isUsedFormOpen 
+                            ? "Editando Produto" 
+                            : (mainTab === 'orders' ? "Novo Pedido (Novo)" : "Cadastrar Novo")}
                     </span>
                 </div>
                 {isFormOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
             </button>
-        ) : null}
+        )}
 
-        {mainTab === 'stock' && activeSubTab === 'used' && (
+        {/* Button for USED Products (Shows if subtab is 'used') */}
+        {activeSubTab === 'used' && (
             <button 
                 onClick={() => {
                     if (editingId) handleCancelEdit();
@@ -521,7 +525,11 @@ export const Inventory: React.FC<InventoryProps> = ({ items, settings, onAddItem
                     <div className="bg-white/20 p-1.5 rounded-lg">
                         {editingId && isUsedFormOpen ? <Pencil className="w-5 h-5" /> : <Smartphone className="w-5 h-5" />}
                     </div>
-                    <span className="text-lg">{editingId && isUsedFormOpen ? "Editando Usado" : "Cadastrar Usado"}</span>
+                    <span className="text-lg">
+                        {editingId && isUsedFormOpen 
+                            ? "Editando Usado" 
+                            : (mainTab === 'orders' ? "Novo Pedido (Usado)" : "Cadastrar Usado")}
+                    </span>
                 </div>
                 {isUsedFormOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
             </button>
